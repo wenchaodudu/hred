@@ -2,7 +2,7 @@ import torch
 from torch.autograd import Variable
 import numpy as np
 
-from model import Embedding, UtteranceEncoder
+from model import Embedding, UtteranceEncoder, ContextEncoder
 
 
 def test_embedding():
@@ -16,8 +16,13 @@ def test_embedding():
 def test_encoder():
     init_embedding = np.asarray([[0.1 * i] * 10 for i in range(5)])
     encoder = UtteranceEncoder(init_embedding, hidden_size=10)
-    input_word = Variable(torch.LongTensor([0, 1, 2, 3, 4]))
-    print(encoder(input_word))
+    input_word = Variable(torch.LongTensor([[0, 1, 2, 3, 4], [1, 1, 2, 2, 3]]))
+    output = encoder(input_word)
+    print(output)
+
+    cencoder = ContextEncoder(20, 10, 2)
+    output = cencoder(output)
+    print(output)
 
 
 if __name__ == '__main__':
