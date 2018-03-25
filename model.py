@@ -7,6 +7,10 @@ import numpy as np
 
 
 class Embedding(nn.Module):
+    """
+    input: (batch_size, seq_length)
+    output: (batch_size, seq_length, embedding_dim)
+    """
     def __init__(self, num_embeddings, embedding_dim, init_embedding=None, trainable=False):
         # init_embedding: 2d matrix of pre-trained word embedding
         super(Embedding, self).__init__()
@@ -45,36 +49,51 @@ class Embedding(nn.Module):
 
 
 class UtteranceEncoder(nn.Module):
+    """
+    input: (batch_size, seq_len)
+    output: (batch_size, hidden_size * direction)
+    """
     def __init__(self, init_embedding, hidden_size, rnn_mode='BiLSTM'):
         super(UtteranceEncoder, self).__init__()
         self.input_size = init_embedding.shape[1]
         self.hidden_size = hidden_size
         self.num_layers = 1
         self.embedding = Embedding(init_embedding.shape[0], init_embedding.shape[1], init_embedding)
-        # if rnn_mode == 'BiLSTM':
-        self.rnn = nn.LSTM(self.input_size, self.hidden_size, self.num_layers, bidirectional=True)
-        # elif rnn_mode == 'GRU':
-        #     self.rnn = nn.GRU(self.input_size, self.hidden_size, self.num_layers)
+        self.rnn = nn.LSTM(self.input_size, self.hidden_size, self.num_layers,
+                           bidirectional=True, batch_first=True)
 
     def forward(self, input):
-        embedding = self.embedding(input)#.view(-1, 1, self.input_size)
-        print(embedding)
-        output, hn = self.rnn(embedding)
-        return output, hn
+        embedding = self.embedding(input)
+        output, _ = self.rnn(embedding, self.init_hidden(input.size()[0]))
+        return output[:, -1, :]
 
-    def init_hidden(self):
-        return Variable(torch.zeros(1, 1, self.hidden_size)), Variable(torch.zeros(1, 1, self.hidden_size))
+    def init_hidden(self, batch):
+        h = Variable(torch.zeros(self.num_layers * 2, batch, self.hidden_size))
+        c = Variable(torch.zeros(self.num_layers * 2, batch, self.hidden_size))
+        return h, c
 
 
 class ContextEncoder(nn.Module):
-    def __init__(self):
+    """
+    input: (batch_size, input_size)
+    output: (batch_size, hidden_size)
+    """
+    def __init__(self, input_size, hidden_size, batch_size):
         super(ContextEncoder, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = 1
+        self.batch_size = batch_size
+        self.rnn = nn.GRU(self.input_size, self.hidden_size, self.num_layers, batch_first=True)
+        self.hidden = self.init_hidden()
 
-    def forward(self):
-        pass
+    def forward(self, input):
+        output, hn = self.rnn(input.view(input.size()[0], 1, self.input_size), self.hidden)
+        self.hidden = hn
+        return output.view(-1, self.hidden_size)
 
     def init_hidden(self):
-        pass
+        return Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size))
 
 
 class Decoder(nn.Module):
