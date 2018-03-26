@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.parameter import Parameter
+import torch.nn.functional as F
+from torch.optim import Adam
 import numpy as np
 # from util import *
+from unit_test import *
 
 
 class Embedding(nn.Module):
@@ -50,21 +53,19 @@ class Embedding(nn.Module):
 
 class UtteranceEncoder(nn.Module):
     """
-    input: (batch_size, seq_len)
+    input: (batch_size, seq_len, embedding_dim)
     output: (batch_size, hidden_size * direction)
     """
-    def __init__(self, init_embedding, hidden_size, rnn_mode='BiLSTM'):
+    def __init__(self, input_size, hidden_size, rnn_mode='BiLSTM'):
         super(UtteranceEncoder, self).__init__()
-        self.input_size = init_embedding.shape[1]
+        self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = 1
-        self.embedding = Embedding(init_embedding.shape[0], init_embedding.shape[1], init_embedding)
         self.rnn = nn.LSTM(self.input_size, self.hidden_size, self.num_layers,
                            bidirectional=True, batch_first=True)
 
     def forward(self, input):
-        embedding = self.embedding(input)
-        output, _ = self.rnn(embedding, self.init_hidden(input.size()[0]))
+        output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
         return output[:, -1, :]
 
     def init_hidden(self, batch):
@@ -85,23 +86,89 @@ class ContextEncoder(nn.Module):
         self.num_layers = 1
         self.batch_size = batch_size
         self.rnn = nn.GRU(self.input_size, self.hidden_size, self.num_layers, batch_first=True)
-        self.hidden = self.init_hidden()
+        # self.hidden = self.init_hidden()
 
-    def forward(self, input):
-        output, hn = self.rnn(input.view(input.size()[0], 1, self.input_size), self.hidden)
-        self.hidden = hn
-        return output.view(-1, self.hidden_size)
+    def forward(self, input, hidden):
+        output, hn = self.rnn(input.view(input.size()[0], 1, self.input_size), hidden)
+        return output.view(-1, self.hidden_size), hn
 
     def init_hidden(self):
         return Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size))
 
 
-class Decoder(nn.Module):
+class HREDDecoder(nn.Module):
+    """
+    input: (batch_size, context_size) and (batch_size, seq_length, input_size)
+    output: (batch_size, seq_length, output_size)
+    """
+    def __init__(self, input_size, context_size, hidden_size, output_size):
+        super(HREDDecoder, self).__init__()
+        self.input_size = input_size
+        self.context_size = context_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.num_layers = 1
+        self.max_seq_len = 30
+
+        self.input_transform = nn.Linear(context_size, hidden_size, bias=True)
+        self.rnn = nn.GRU(input_size, hidden_size, self.num_layers, batch_first=True)
+        self.output_transform = nn.Linear(hidden_size, output_size, bias=True)
+
+    def forward(self, context, word):
+        hn = self.init_hidden(context)
+        output, _ = self.rnn(word, hn)
+        output = F.tanh(self.output_transform(output))
+        return output
+
+    def generate(self, context, word):
+        pass
+
+    def init_hidden(self, context):
+        return F.tanh(self.input_transform(context)).view(1, 1, -1)
+
+
+class VHREDDecoder(nn.Module):
     def __init__(self):
-        super(Decoder, self).__init__()
+        super(VHREDDecoder, self).__init__()
 
     def forward(self):
         pass
 
-    def init_hidden(self):
-        pass
+
+def train():
+    embed = Embedding(50, 20, get_dummy_embedding(50, 20))
+    uenc = UtteranceEncoder(20, 20)
+    cenc = ContextEncoder(40, 30, 1)
+    dec = HREDDecoder(20, 30, 20, 50)
+
+    train_data = get_dummy_train_data(2, 3, 8, 50)
+
+    params = list(uenc.parameters()) + list(cenc.parameters()) + list(dec.parameters())
+    # print(params)
+    optim = Adam(params)
+
+    for dialog in train_data:
+        total_loss = 0
+        hn = cenc.init_hidden()
+        for i in range(len(dialog)-1):
+            source, target = dialog[i], dialog[i+1]
+            # print(source, target)
+            source, target = torch.LongTensor(source).view(1, -1), torch.LongTensor(target).view(1, -1)
+            # print(source, target)
+            u_repr = uenc(embed(source))
+            # print(u_repr.size())
+            c_repr, hn = cenc(u_repr, hn)
+            # print(c_repr.size())
+            prdt = dec(c_repr, embed(target))[0]
+            # print(prdt.size())
+            loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
+            # print(loss)
+            total_loss += loss
+
+        optim.zero_grad()
+        total_loss.backward()
+        optim.step()
+
+
+if __name__ == '__main__':
+    train()
