@@ -1,6 +1,7 @@
 import torch
 from torch.autograd import Variable
 import numpy as np
+import random
 
 from model import Embedding, UtteranceEncoder, ContextEncoder
 
@@ -23,6 +24,24 @@ def test_encoder():
     cencoder = ContextEncoder(20, 10, 2)
     output = cencoder(output)
     print(output)
+
+
+def get_dummy_embedding(vocabulary_size, embedding_size):
+    return np.random.random((vocabulary_size, embedding_size))
+
+
+def get_dummy_train_data(D, N, l, V):
+    data = []
+    for i in range(D):
+        datapoint = []
+        for j in range(N):
+            length = random.randint(1, l)
+            uttr = np.zeros(length)
+            for k in range(length):
+                uttr[k] = random.randint(0, V-1)
+            datapoint.append(uttr)
+        data.append(datapoint)
+    return data
 
 
 if __name__ == '__main__':
