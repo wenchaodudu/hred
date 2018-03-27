@@ -4,7 +4,7 @@ from torch.autograd import Variable
 
 import sys
 from data_loader import get_loader
-from model import UtteranceEncoder, ContextEncoder, Decoder
+from model import UtteranceEncoder, ContextEncoder, HREDDecoder
 
 
 def train(self, input_variable, target_variable,
@@ -12,6 +12,7 @@ def train(self, input_variable, target_variable,
             encoder_optimizer, decoder_optimizer, criterion,
             last,max_length=None):
     pass
+
 
 def main(argv):
     train_loader = get_loader('./data/train.src', './data/train.trg', './data/word2id.json', 100) 
