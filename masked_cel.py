@@ -1,13 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+import pdb
 
 
 def _sequence_mask(sequence_length, max_len=None):
     if max_len is None:
         max_len = sequence_length.data.max()
     batch_size = sequence_length.size(0)
-    seq_range = torch.range(0, max_len - 1).long()
+    #seq_range = torch.range(0, max_len - 1).long()
+    seq_range = torch.arange(0, max_len).long()
     seq_range_expand = seq_range.unsqueeze(0).expand(batch_size, max_len)
     seq_range_expand = Variable(seq_range_expand)
     if sequence_length.is_cuda:
@@ -37,7 +40,7 @@ def compute_loss(logits, target, length):
     # log_probs_flat: (batch * max_len, num_classes)
     log_probs_flat = F.log_softmax(logits_flat)
     # target_flat: (batch * max_len, 1)
-    target_flat = target.view(-1, 1)
+    target_flat = target.contiguous().view(-1, 1)
     # losses_flat: (batch * max_len, 1)
     losses_flat = -torch.gather(log_probs_flat, dim=1, index=target_flat)
     # losses: (batch, max_len)

@@ -53,7 +53,7 @@ def main(argv):
         cenc_out = cenc(packed_input)
         # cenc_out: (batch_size, dim2)
         max_len = max(trg_lengths)
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary)))
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary))).cuda()
         decoder_hidden = decoder.init_hidden(cenc_out)
         #decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
         decoder_input = embed(torch.zeros(_batch_size).long().cuda().fill_(dictionary['<start>']))
@@ -64,8 +64,7 @@ def main(argv):
             decoder_outputs[:, t-1, :] = decoder_output
             decoder_input = embed(trg_seqs[:, t].cuda())
         
-        pdb.set_trace()
-        #loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:]).cuda(), Variable(torch.LongTensor(trg_lengths) - 1))
+        loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:]).cuda(), Variable(torch.LongTensor(trg_lengths) - 1).cuda())
 
         optimizer.zero_grad()
         loss.backward()
