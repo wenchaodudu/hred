@@ -109,7 +109,6 @@ class HREDDecoder(nn.Module):
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.num_layers = 1
-        self.max_seq_len = 30
 
         self.input_transform = nn.Linear(context_size, hidden_size, bias=True)
         self.rnn = nn.GRU(input_size, hidden_size, self.num_layers, batch_first=True)
