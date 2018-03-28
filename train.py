@@ -100,15 +100,18 @@ def main(argv):
         src_seqs = embed(src_seqs.cuda())
         # src_seqs: (N, max_uttr_len, word_dim)
         packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        '''
         packed_output = uenc(packed_input)
         output, _ = pad_packed_sequence(packed_output, batch_first=True)
+        '''
+        output = uenc(packed_input)
         # output: (N, max_uttr_len, dim1)
         _batch_size = len(ctc_lengths)
         max_len = max(ctc_lengths)
         cenc_in = Variable(torch.zeros(_batch_size, max_len, cenc_input_size).float())
         for i in range(len(indices)):
             x, y = indices[i]
-            cenc_in[x, y, :] = output[i, src_lengths[i] - 1, :]
+            cenc_in[x, y, :] = output[i]
         # cenc_in: (batch_size, max_turn, dim1)
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
@@ -116,8 +119,11 @@ def main(argv):
         trg_seqs = trg_seqs[perm_idx]
         # trg_seqs: (batch_size, max_trg_len)
         packed_input = pack_padded_sequence(cenc_in.cuda(), ctc_lengths.numpy(), batch_first=True)
+        '''
         packed_output = cenc(packed_input)
         cenc_out, _ = pad_packed_sequence(packed_output, batch_first=True)
+        '''
+        cenc_out = cenc(packed_input)
         # cenc_out: (batch_size, max_turn, dim2)
         '''
         pred = dec(cenc_out, embed(trg_seqs))[0]
@@ -126,10 +132,7 @@ def main(argv):
         '''
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary)))
-        cenc_out_select = Variable(torch.zeros(_batch_size, 400))
-        for i in range(_batch_size):
-            cenc_out_select[i] = cenc_out[i, ctc_lengths[i] - 1, :]
-        decoder_hidden = decoder.init_hidden(cenc_out_select.cuda())
+        decoder_hidden = decoder.init_hidden(cenc_out)
         decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
         pdb.set_trace()
         for t in range(1, max_len):
