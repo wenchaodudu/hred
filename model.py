@@ -4,9 +4,11 @@ from torch.autograd import Variable
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 from torch.optim import Adam
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import numpy as np
 # from util import *
-#from unit_test import *
+# from unit_test import *
+from dataset import *
 
 
 class Embedding(nn.Module):
@@ -16,11 +18,12 @@ class Embedding(nn.Module):
     """
     def __init__(self, num_embeddings, embedding_dim, init_embedding=None, trainable=False):
         # init_embedding: 2d matrix of pre-trained word embedding
+        # row 0 used for padding
         super(Embedding, self).__init__()
-        self.num_embeddings, self.embedding_dim = num_embeddings, embedding_dim
-        self.weight = Parameter(torch.Tensor(num_embeddings, embedding_dim))
+        self.num_embeddings, self.embedding_dim = num_embeddings + 1, embedding_dim
+        self.weight = Parameter(torch.Tensor(self.num_embeddings, self.embedding_dim))
 
-        self.padding_idx = None
+        self.padding_idx = 0
         self.max_norm = None
         self.norm_type = 2
         self.scale_grad_by_freq = False
@@ -31,7 +34,7 @@ class Embedding(nn.Module):
 
     def reset_parameters(self, init_embedding=None):
         if not (init_embedding is None):
-            self.weight.data.copy_(torch.from_numpy(init_embedding))
+            self.weight[1:].data.copy_(torch.from_numpy(init_embedding))
         else:
             self.weight.data.normal_(0, 1)
         if self.padding_idx is not None:
@@ -136,17 +139,32 @@ class VHREDDecoder(nn.Module):
 
 
 def train():
-    embed = Embedding(50, 20, get_dummy_embedding(50, 20))
+    dataset = DummyDataset(4, 16, 5, 10, 50, 20)
+
+    embed = Embedding(50, 20, dataset.get_embedding())
     uenc = UtteranceEncoder(20, 20)
     cenc = ContextEncoder(40, 30, 1)
     dec = HREDDecoder(20, 30, 20, 50)
-
-    train_data = get_dummy_train_data(2, 3, 8, 50)
 
     params = list(uenc.parameters()) + list(cenc.parameters()) + list(dec.parameters())
     # print(params)
     optim = Adam(params)
 
+    dataset.start_iter()
+    batch_size = dataset.batch_size
+    max_turn = dataset.max_turn
+    max_len = dataset.max_len
+    while True:
+        batch = dataset.get_next_batch()
+        if batch is None:
+            break
+        # print(batch)
+        batch = torch.LongTensor(batch)
+        embedded = embed(batch.view(batch_size * max_turn, max_len)).view(batch_size, max_turn, max_len, -1)
+        print(embedded)
+        embedded = pack_padded_sequence(embedded, )
+        u_repr = uenc(embedded)
+    """
     for dialog in train_data:
         total_loss = 0
         hn = cenc.init_hidden()
@@ -168,6 +186,7 @@ def train():
         optim.zero_grad()
         total_loss.backward()
         optim.step()
+    """
 
 
 if __name__ == '__main__':

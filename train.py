@@ -15,27 +15,19 @@ def main(argv):
     '''
     for _, (source, target) in enumerate(train_loader):
         u_encoder_h = UEncoder.init_hidden()
-
         #encoder_optimizer.zero_grad() # pytorch accumulates gradients, so zero grad clears them up.
         #decoder_optimizer.zero_grad()
-
         input_length = source.size()[0]
         target_length = target.size()[0]
-
         u_encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size)).cuda()
-
         loss = 0
-
         for ei in range(input_length):
             u_encoder_out, u_encoder_h = UEncoder(source[ei], u_encoder_h)
             u_encoder_outputs[ei] = u_encoder_out[0][0]
-
         # calculate context
         c_encoder_h = CEncoder.init_hidden()
         c_encoder_out, c_encoder_h = CEncoder(u_encoder_outputs, c_encoder_h)
-
         use_teacher_forcing = True if random.random() < self.teacher_forcing_ratio else False
-
         if use_teacher_forcing:
             # Teacher forcing: Feed the target as the next input
             for di in range(target_length):
@@ -43,31 +35,24 @@ def main(argv):
                     decoder_input, decoder_hidden, encoder_output, encoder_outputs,context_hidden)
                 loss += criterion(decoder_output[0], target_variable[di])
                 decoder_input = target_variable[di]  # Teacher forcing
-
         else:
-
             # Without teacher forcing: use its own predictions as the next input
             for di in range(target_length):
                 decoder_output, decoder_hidden, decoder_attention = decoder(
                     decoder_input, decoder_hidden, encoder_output, encoder_outputs,context_hidden)
                 topv, topi = decoder_output.data.topk(1)
                 ni = topi[0][0]
-
                 decoder_input = Variable(torch.LongTensor([[ni]]))
                 decoder_input = decoder_input.cuda() if use_cuda else decoder_input
-
                 # only calculate loss if its the last turn
                 if last:
                     loss += criterion(decoder_output[0], target_variable[di])
                 if ni == self.EOS_token:
                     break
-
         if last:
             loss.backward()
-
         #encoder_optimizer.step()
         #decoder_optimizer.step()
-
         if last:
             return loss.data[0] / target_length, context_hidden
         else:
@@ -100,7 +85,6 @@ def main(argv):
             loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
             # print(loss)
             total_loss += loss
-
         optim.zero_grad()
         total_loss.backward()
         optim.step()
@@ -131,7 +115,6 @@ def main(argv):
         loss.backward()
         optimizer.step()
 
-       
 
 if __name__ == '__main__':
     main(sys.argv)
