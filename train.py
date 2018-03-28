@@ -34,23 +34,23 @@ def main(argv):
             print(_)
         src_seqs = embed(src_seqs.cuda())
         # src_seqs: (N, max_uttr_len, word_dim)
-        packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
-        output = uenc(packed_input)
+        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        uenc_output = uenc(uenc_packed_input)
         # output: (N, dim1)
         _batch_size = len(ctc_lengths)
         max_len = max(ctc_lengths)
-        cenc_in = Variable(torch.zeros(_batch_size, max_len, cenc_input_size).float())
+        cenc_in = Variable(torch.zeros(_batch_size, max_len, cenc_input_size).float()).cuda()
         for i in range(len(indices)):
             x, y = indices[i]
-            cenc_in[x, y, :] = output[i]
+            cenc_in[x, y, :] = uenc_output[i]
         # cenc_in: (batch_size, max_turn, dim1)
-        ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
+        ctc_lengths, perm_idx = torch.cuda.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
         # cenc_in: (batch_size, max_turn, dim1)
-        trg_seqs = trg_seqs[perm_idx]
+        trg_seqs = trg_seqs.cuda()[perm_idx]
         # trg_seqs: (batch_size, max_trg_len)
-        packed_input = pack_padded_sequence(cenc_in.cuda(), ctc_lengths.numpy(), batch_first=True)
-        cenc_out = cenc(packed_input)
+        cenc_packed_input = pack_padded_sequence(cenc_in, ctc_lengths.cpu().numpy(), batch_first=True)
+        cenc_out = cenc(cenc_packed_input)
         # cenc_out: (batch_size, dim2)
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary))).cuda()
