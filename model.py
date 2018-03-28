@@ -113,7 +113,7 @@ class HREDDecoder(nn.Module):
         self.output_size = output_size
         self.num_layers = 1
 
-        self.input_transform = nn.Linear(context_size, hidden_size, bias=True)
+        self.context_hidden_transform = nn.Linear(context_size, hidden_size, bias=True)
         self.rnn = nn.GRU(input_size, hidden_size, self.num_layers, batch_first=True)
         self.output_transform = nn.Linear(hidden_size, output_size, bias=True)
 
@@ -126,7 +126,7 @@ class HREDDecoder(nn.Module):
         pass
 
     def init_hidden(self, context):
-        return F.tanh(self.input_transform(context.view(1, context.size()[0], -1)))
+        return F.tanh(self.context_hidden_transform(context.view(1, context.size()[0], -1)))
 
 
 class VHREDDecoder(nn.Module):
