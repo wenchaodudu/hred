@@ -5,6 +5,7 @@ from torch.autograd import Variable
 import sys
 import json
 import pdb
+import numpy as np
 from data_loader import get_loader
 
 from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
@@ -67,7 +68,7 @@ def main(argv):
     cenc = ContextEncoder(cenc_input_size, 400).cuda()
     decoder = HREDDecoder(300, 400, 400, len(dictionary)).cuda()
 
-    params = list(uenc.parameters()) + list(cenc.parameters()) + list(dec.parameters())
+    params = list(uenc.parameters()) + list(cenc.parameters()) + list(decoder.parameters())
     # print(params)
     optimizer = torch.optim.Adam(params, lr=0.0001)
 
@@ -107,7 +108,7 @@ def main(argv):
         cenc_in = Variable(torch.zeros(_batch_size, max_len, cenc_input_size).float())
         for i in range(len(indices)):
             x, y = indices[i]
-            cenc_in[x, y, :] = output[i, -1, :]
+            cenc_in[x, y, :] = output[i, src_lengths[i] - 1, :]
         # cenc_in: (batch_size, max_turn, dim1)
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
@@ -116,7 +117,6 @@ def main(argv):
         # trg_seqs: (batch_size, max_trg_len)
         packed_input = pack_padded_sequence(cenc_in.cuda(), ctc_lengths.numpy(), batch_first=True)
         packed_output = cenc(packed_input)
-        pdb.set_trace()
         cenc_out, _ = pad_packed_sequence(packed_output, batch_first=True)
         # cenc_out: (batch_size, max_turn, dim2)
         '''
@@ -126,7 +126,10 @@ def main(argv):
         '''
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary)))
-        decoder_hidden = decoder.init_hidden(cenc_out)
+        cenc_out_select = torch.zeros(_batch_size, 400).cuda()
+        for i in range(_batch_size):
+            cenc_out_select[i] = cenc_out[i, ctc_lengths[i] - 1, :]
+        decoder_hidden = decoder.init_hidden(cenc_out_select)
         decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
         for t in range(1, max_len):
             decoder_output, decoder_hidden = decoder(
