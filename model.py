@@ -8,7 +8,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import numpy as np
 # from util import *
 # from unit_test import *
-from dataset import *
+#from dataset import *
 
 
 class Embedding(nn.Module):
@@ -139,6 +139,8 @@ class VHREDDecoder(nn.Module):
 
 
 def train():
+    pass
+    """
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)
 
     embed = Embedding(50, 20, dataset.get_embedding())
@@ -164,7 +166,6 @@ def train():
         print(embedded)
         embedded = pack_padded_sequence(embedded, )
         u_repr = uenc(embedded)
-    """
     for dialog in train_data:
         total_loss = 0
         hn = cenc.init_hidden()

@@ -7,6 +7,7 @@ import json
 import pdb
 from data_loader import get_loader
 from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 def main(argv):
@@ -92,8 +93,8 @@ def main(argv):
     total_loss = 0
     for _, (src_seqs, src_lengths, indices, trg_seqs, ctc_lengths) in enumerate(train_loader):
         pdb.set_trace()
-        src_seqs = embed(src_seqs)
-        packed_input = pack_padded_sequence(src_seqs, src_lengths)
+        src_seqs = embed(src_seqs.cuda())
+        packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
         packed_output, (h, c) = uenc(packed_input)
         output, _ = pad_packed_sequence(packed_output)
         _batch_size = len(ctc_lengths)
@@ -104,7 +105,7 @@ def main(argv):
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
         trg_seqs = trg_seqs[perm_idx]
-        packed_input = pack_packed_sequence(cenc_in, ctc_lengths.numpy())
+        packed_input = pack_packed_sequence(cenc_in, ctc_lengths.numpy(), batch_first=True)
         packed_output, (h, c) = cenc(cenc_in)
         cenc_out, _ = pad_packed_sequence(packed_output)
         pred = dec(cenc_out, embed(trg_seqs))[0]
