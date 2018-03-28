@@ -56,12 +56,11 @@ class Embedding(nn.Module):
 
 class UtteranceEncoder(nn.Module):
     """
-    input: (batch_size, max_turn, max_len, embedding_dim)
-    output: (batch_size, max_turn, hidden_size * direction)
+    input: (batch_size, seq_len, embedding_dim)
+    output: (batch_size, hidden_size * direction)
     """
-    def __init__(self, batch_size, max_turn, max_len, input_size, hidden_size, rnn_mode='BiLSTM'):
+    def __init__(self, input_size, hidden_size, rnn_mode='BiLSTM'):
         super(UtteranceEncoder, self).__init__()
-        self.batch_size, self.max_turn, self.max_len = batch_size, max_turn, max_len
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = 1
@@ -69,12 +68,7 @@ class UtteranceEncoder(nn.Module):
                            bidirectional=True, batch_first=True)
 
     def forward(self, input, length):
-        print(input.size())
-        input = input.view(self.batch_size * self.max_turn, self.max_len, -1)
-        sorted_len = sorted()
-        print(input.size())
-        input = pack_padded_sequence(input, length)
-        output, _ = self.rnn(input, self.init_hidden(self.batch_size * self.max_turn))
+        output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
         return output[:, -1, :]
 
     def init_hidden(self, batch_size):
