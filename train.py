@@ -111,11 +111,7 @@ def main(argv):
         # cenc_in: (batch_size, max_turn, cenc_in_dim)
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
-<<<<<<< HEAD
-        trg_seqs = trg_seqs[perm_idx]
-=======
         trg_seqs = trg_seqs[perm_idx.numpy()]
->>>>>>> 28d5f3645274261963661f961cf106ff4685acfa
         packed_input = pack_packed_sequence(cenc_in, ctc_lengths.numpy(), batch_first=True)
         packed_output = cenc(cenc_in)
         cenc_out, _ = pad_packed_sequence(packed_output)
