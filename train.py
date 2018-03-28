@@ -119,9 +119,11 @@ def main(argv):
         '''
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len, len(dictionary)))
+        decoder_hidden = cenc_out
+        decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
         for t in range(max_len):
-            decoder_output = decoder(
-                decoder_input, decoder_hidden, encoder_outputs
+            decoder_output, decoder_hidden = decoder(
+                decoder_input, decoder_hidden
             )
 
         optimizer.zero_grad()
