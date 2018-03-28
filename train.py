@@ -3,16 +3,15 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 import sys
+import json
+import pdb
 from data_loader import get_loader
-from model import UtteranceEncoder, ContextEncoder, Decoder
+from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
 
 
 def main(argv):
-    train_loader = get_loader('./data/train.src', './data/train.trg', './data/word2id.json', 40) 
-    max_length = 30
-    UEncoder = UtteranceEncoder(word_vectors, 300)
-    CEncoder = ContextEncoder(300, 300, 100)
-    decoder = Decoder()
+    dictionary = json.load(open('./data/dictionary.json'))
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 40) 
     '''
     for _, (source, target) in enumerate(train_loader):
         u_encoder_h = UEncoder.init_hidden()
@@ -74,16 +73,14 @@ def main(argv):
         else:
             return context_hidden
     '''
-    embed = Embedding(50, 20, get_dummy_embedding(50, 20))
-    uenc = UtteranceEncoder(20, 20) 
-    cenc = ContextEncoder(40, 30, 1)
-    dec = HREDDecoder(20, 30, 20, 50) 
-
-    train_data = get_dummy_train_data(2, 3, 8, 50) 
+    embed = Embedding(len(dictionary), 300).cuda()
+    uenc = UtteranceEncoder(300, 400).cuda()
+    cenc = ContextEncoder(400, 400, 1).cuda()
+    dec = HREDDecoder(300, 400, 400, 400).cuda()
 
     params = list(uenc.parameters()) + list(cenc.parameters()) + list(dec.parameters())
     # print(params)
-    optim = Adam(params)
+    optimizer = torch.optim.Adam(params, lr=0.0001)
 
     '''
     for dialog in train_data:
@@ -110,6 +107,7 @@ def main(argv):
     '''
     total_loss = 0
     for _, (src_seqs, src_lengths, indices, trg_seqs, ctc_lengths) in enumerate(train_loader):
+        pdb.set_trace()
         src_seqs = embed(src_seqs)
         packed_input = pack_padded_sequence(src_seqs, src_lengths)
         packed_output, (h, c) = uenc(packed_input)
