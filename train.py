@@ -117,7 +117,7 @@ def main(argv):
         cenc_out, _ = pad_packed_sequence(packed_output)
         pred = dec(cenc_out, embed(trg_seqs))[0]
         loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
-        total_loss += loss.data[0]
+        total_loss += torch.sum(loss.data)
 
         optimizer.zero_grad()
         loss.backward()
