@@ -95,7 +95,7 @@ def main(argv):
     '''
     total_loss = 0
     # src_seqs: (N * max_len * word_dim)
-    for _, (src_seqs, src_lengths, indices, trg_seqs, ctc_lengths) in enumerate(train_loader):
+    for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
         src_seqs = embed(src_seqs.cuda())
         packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
         packed_output = uenc(packed_input)
@@ -108,13 +108,21 @@ def main(argv):
             cenc_in[x, y, :] = output[i, -1, :]
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
-        trg_seqs = trg_seqs[perm_idx.numpy()]
-        packed_input = pack_packed_sequence(cenc_in, ctc_lengths.numpy(), batch_first=True)
+        trg_seqs = trg_seqs[perm_idx]
+        packed_input = pack_padded_sequence(cenc_in, ctc_lengths.numpy(), batch_first=True)
         packed_output = cenc(cenc_in)
         cenc_out, _ = pad_packed_sequence(packed_output)
+        '''
         pred = dec(cenc_out, embed(trg_seqs))[0]
         loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
         total_loss += loss.data[0]
+        '''
+        max_len = max(trg_lengths)
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len, len(dictionary)))
+        for t in range(max_len):
+            decoder_output, decoder_hidden, decoder_attn = decoder(
+                decoder_input, decoder_hidden, encoder_outputs
+            )
 
         optimizer.zero_grad()
         loss.backward()
