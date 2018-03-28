@@ -67,7 +67,7 @@ class UtteranceEncoder(nn.Module):
         self.rnn = nn.LSTM(self.input_size, self.hidden_size, self.num_layers,
                            bidirectional=True, batch_first=True)
 
-    def forward(self, input, length):
+    def forward(self, input):
         output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
         return output[:, -1, :]
 
