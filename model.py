@@ -99,8 +99,8 @@ class ContextEncoder(nn.Module):
 
 class HREDDecoder(nn.Module):
     """
-    input: (batch_size, context_size) and (batch_size, seq_length, input_size)
-    output: (batch_size, seq_length, output_size)
+    input: (batch_size, context_size) and (batch_size, input_size)
+    output: (batch_size, output_size)
     """
     def __init__(self, input_size, context_size, hidden_size, output_size):
         super(HREDDecoder, self).__init__()
@@ -115,17 +115,16 @@ class HREDDecoder(nn.Module):
         self.rnn = nn.GRU(input_size, hidden_size, self.num_layers, batch_first=True)
         self.output_transform = nn.Linear(hidden_size, output_size, bias=True)
 
-    def forward(self, context, word):
-        hn = self.init_hidden(context)
-        output, _ = self.rnn(word, hn)
-        output = self.output_transform(output)
-        return output
+    def forward(self, hn, word):
+        output, hn = self.rnn(word.view(word.size()[0], 1, -1), hn)
+        output = self.output_transform(output[:,0,:])
+        return output, hn
 
     def generate(self, context, word):
         pass
 
     def init_hidden(self, context):
-        return F.tanh(self.input_transform(context)).view(1, context.size()[0], -1)
+        return F.tanh(self.input_transform(context.view(1, context.size()[0], -1)))
 
 
 class VHREDDecoder(nn.Module):
