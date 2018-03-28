@@ -57,7 +57,7 @@ class Embedding(nn.Module):
 class UtteranceEncoder(nn.Module):
     """
     input: (batch_size, seq_len, embedding_dim)
-    output: (batch_size, seq_len, hidden_size * direction)
+    output: (batch_size, hidden_size * direction)
     """
     def __init__(self, input_size, hidden_size):
         super(UtteranceEncoder, self).__init__()
@@ -81,7 +81,7 @@ class UtteranceEncoder(nn.Module):
 class ContextEncoder(nn.Module):
     """
     input: (batch_size, seq_len, input_size)
-    output: (batch_size, seq_len, hidden_size)
+    output: (batch_size, hidden_size)
     """
     def __init__(self, input_size, hidden_size):
         super(ContextEncoder, self).__init__()
