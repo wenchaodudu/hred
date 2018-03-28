@@ -65,7 +65,7 @@ def main(argv):
     embed = Embedding(len(dictionary), 300).cuda()
     uenc = UtteranceEncoder(300, 200).cuda()
     cenc = ContextEncoder(cenc_input_size, 400).cuda()
-    dec = HREDDecoder(300, 400, 400, 400).cuda()
+    dec = HREDDecoder(300, 400, 400, len(dictionary)).cuda()
 
     params = list(uenc.parameters()) + list(cenc.parameters()) + list(dec.parameters())
     # print(params)
@@ -96,22 +96,21 @@ def main(argv):
     total_loss = 0
     # src_seqs: (N * max_len * word_dim)
     for _, (src_seqs, src_lengths, indices, trg_seqs, ctc_lengths) in enumerate(train_loader):
-        pdb.set_trace()
         src_seqs = embed(src_seqs.cuda())
         packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
         packed_output = uenc(packed_input)
         output, _ = pad_packed_sequence(packed_output, batch_first=True)
         _batch_size = len(ctc_lengths)
         max_len = max(ctc_lengths)
-        cenc_in = torch.zeros(_batch_size, max_len, cenc_input_size).float()
+        cenc_in = Variable(torch.zeros(_batch_size, max_len, cenc_input_size).float())
         for i in range(len(indices)):
             x, y = indices[i]
             cenc_in[x, y, :] = output[i, -1, :]
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
-        trg_seqs = trg_seqs[perm_idx]
+        trg_seqs = trg_seqs[perm_idx.numpy()]
         packed_input = pack_packed_sequence(cenc_in, ctc_lengths.numpy(), batch_first=True)
-        packed_output, (h, c) = cenc(cenc_in)
+        packed_output = cenc(cenc_in)
         cenc_out, _ = pad_packed_sequence(packed_output)
         pred = dec(cenc_out, embed(trg_seqs))[0]
         loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
