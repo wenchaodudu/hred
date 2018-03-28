@@ -101,8 +101,9 @@ class ContextEncoder(nn.Module):
 
 class HREDDecoder(nn.Module):
     """
-    input: (batch_size, context_size) and (batch_size, input_size)
-    output: (batch_size, output_size)
+    input: (batch_size, input_size) context: (batch_size, context_size)
+    output: (batch_size, output_size) hn: (1, batch_size, hidden_size)
+    one step at a time
     """
     def __init__(self, input_size, context_size, hidden_size, output_size):
         super(HREDDecoder, self).__init__()
@@ -112,12 +113,12 @@ class HREDDecoder(nn.Module):
         self.output_size = output_size
         self.num_layers = 1
 
-        self.input_transform = nn.Linear(context_size, hidden_size, bias=True)
+        self.context_hidden_transform = nn.Linear(context_size, hidden_size, bias=True)
         self.rnn = nn.GRU(input_size, hidden_size, self.num_layers, batch_first=True)
         self.output_transform = nn.Linear(hidden_size, output_size, bias=True)
 
-    def forward(self, hn, word):
-        output, hn = self.rnn(word.view(word.size()[0], 1, -1), hn)
+    def forward(self, input, hn):
+        output, hn = self.rnn(input.view(input.size()[0], 1, -1), hn)
         output = self.output_transform(output[:,0,:])
         return output, hn
 
@@ -125,7 +126,7 @@ class HREDDecoder(nn.Module):
         pass
 
     def init_hidden(self, context):
-        return F.tanh(self.input_transform(context.view(1, context.size()[0], -1)))
+        return F.tanh(self.context_hidden_transform(context.view(1, context.size()[0], -1)))
 
 
 class VHREDDecoder(nn.Module):

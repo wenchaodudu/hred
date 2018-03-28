@@ -105,7 +105,7 @@ def main(argv):
         output, _ = pad_packed_sequence(packed_output, batch_first=True)
         '''
         output = uenc(packed_input)
-        # output: (N, max_uttr_len, dim1)
+        # output: (N, dim1)
         _batch_size = len(ctc_lengths)
         max_len = max(ctc_lengths)
         cenc_in = Variable(torch.zeros(_batch_size, max_len, cenc_input_size).float())
@@ -124,7 +124,7 @@ def main(argv):
         cenc_out, _ = pad_packed_sequence(packed_output, batch_first=True)
         '''
         cenc_out = cenc(packed_input)
-        # cenc_out: (batch_size, max_turn, dim2)
+        # cenc_out: (batch_size, dim2)
         '''
         pred = dec(cenc_out, embed(trg_seqs))[0]
         loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
@@ -141,7 +141,6 @@ def main(argv):
             )
             decoder_outputs[:, t-1, :] = decoder_output
             decoder_input = embed(trg_seqs[:, t].cuda())
-        pdb.set_trace()
 
         optimizer.zero_grad()
         loss.backward()
