@@ -9,8 +9,20 @@ class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
-        self.src_seqs = [self.preprocess_src(src_seq, word2ind) for src_seq in open(src_path).readlines()]
-        self.trg_seqs = [self.preprocess_trg(trg_seq, word2ind) for trg_seq in open(trg_path).readlines()]
+        src_seqs = open(src_path).readlines()
+        trg_seqs = open(trg_path).readlines()
+        self.src_seqs = [None for x in src_seqs]
+        self.trg_seqs = [None for x in trg_seqs]
+        print("Preprocessing contexts.")
+        for _, line in enumerate(src_seqs):
+            if _ % 100000 == 0:
+                print(_)
+            self.src_seqs[_] = self.preprocess_src(line, word2id)
+        print("Preprocessing responses.")
+        for _, line in enumerate(trg_seqs):
+            if _ % 100000 == 0:
+                print(_)
+            self.trg_seqs[_] = self.preprocess_trg(line, word2id)
         self.num_total_seqs = len(self.src_seqs)
         self.word2id = word2id
 
@@ -70,14 +82,14 @@ def collate_fn(data):
         padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
         for i, seq in enumerate(sequences):
             end = lengths[i]
-            padded_seqs[i, :end] = seq[:end]
+            padded_seqs[i, :end] = torch.LongTensor(seq)
         return padded_seqs, lengths
 
     src, trg = zip(*data)
     ctc_len = [len(x) for x in src]
     utt_indices = [(x, y) for x in range(len(src)) for y in range(len(src[x]))]
     src_flatten = [utt for context in src for utt in context]
-    src_data = zip(src_flatten, utt_indices)
+    src_data = list(zip(src_flatten, utt_indices))
     # sort a list by sequence length (descending order) to use pack_padded_sequence
     src_data.sort(key=lambda x: len(x[0]), reverse=True)
 
@@ -89,7 +101,7 @@ def collate_fn(data):
     src_seqs, src_lengths = merge(src_seqs)
     #trg_seqs, trg_lengths = merge(trg_seqs)
 
-    return src_seqs, src_lengths, indices, trg_seqs, ctc_len
+    return src_seqs, src_lengths, indices, trg, ctc_len
 
 
 def get_loader(src_path, trg_path, word2id, batch_size=100):
