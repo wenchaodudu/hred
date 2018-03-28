@@ -26,10 +26,6 @@ def test_encoder():
     print(output)
 
 
-def get_dummy_embedding(vocabulary_size, embedding_size):
-    return np.random.random((vocabulary_size, embedding_size))
-
-
 def get_dummy_train_data(D, N, l, V):
     data = []
     for i in range(D):
