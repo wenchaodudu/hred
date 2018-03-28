@@ -133,7 +133,9 @@ def main(argv):
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary)))
         decoder_hidden = decoder.init_hidden(cenc_out)
+        # decoder_hidden: (1, batch_size, dim3)
         decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
+        # decoder_input: (batch_size, input_size)
         pdb.set_trace()
         for t in range(1, max_len):
             decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
