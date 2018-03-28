@@ -68,7 +68,7 @@ class UtteranceEncoder(nn.Module):
                            bidirectional=True, batch_first=True)
 
     def forward(self, input):
-        output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
+        output, _ = self.rnn(input)
         return output
 
     def init_hidden(self, batch_size):
@@ -90,7 +90,7 @@ class ContextEncoder(nn.Module):
         self.rnn = nn.GRU(self.input_size, self.hidden_size, self.num_layers, batch_first=True)
 
     def forward(self, input):
-        output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
+        output, _ = self.rnn(input)
         return output
 
     def init_hidden(self, batch_size):
