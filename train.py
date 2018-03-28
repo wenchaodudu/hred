@@ -65,7 +65,7 @@ def main(argv):
     embed = Embedding(len(dictionary), 300).cuda()
     uenc = UtteranceEncoder(300, 200).cuda()
     cenc = ContextEncoder(cenc_input_size, 400).cuda()
-    dec = HREDDecoder(300, 400, 400, len(dictionary)).cuda()
+    decoder = HREDDecoder(300, 400, 400, len(dictionary)).cuda()
 
     params = list(uenc.parameters()) + list(cenc.parameters()) + list(dec.parameters())
     # print(params)
@@ -119,7 +119,7 @@ def main(argv):
         '''
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len, len(dictionary)))
-        decoder_hidden = cenc_out
+        decoder_hidden = decoder.init_hidden(cenc_out)
         decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
         for t in range(max_len):
             decoder_output, decoder_hidden = decoder(
