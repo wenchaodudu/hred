@@ -13,7 +13,7 @@ from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
 def main(argv):
     dictionary = json.load(open('./data/dictionary.json'))
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 40) 
->>>>>>> 42432ea7424992448bafe844747edb2c24ff85c4
+
     '''
     for _, (source, target) in enumerate(train_loader):
         u_encoder_h = UEncoder.init_hidden()
