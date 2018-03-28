@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import numpy as np
-# from util import *
+from util import get_length
 # from unit_test import *
 #from dataset import *
 
@@ -56,24 +56,30 @@ class Embedding(nn.Module):
 
 class UtteranceEncoder(nn.Module):
     """
-    input: (batch_size, seq_len, embedding_dim)
-    output: (batch_size, hidden_size * direction)
+    input: (batch_size, max_turn, max_len, embedding_dim)
+    output: (batch_size, max_turn, hidden_size * direction)
     """
-    def __init__(self, input_size, hidden_size, rnn_mode='BiLSTM'):
+    def __init__(self, batch_size, max_turn, max_len, input_size, hidden_size, rnn_mode='BiLSTM'):
         super(UtteranceEncoder, self).__init__()
+        self.batch_size, self.max_turn, self.max_len = batch_size, max_turn, max_len
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = 1
         self.rnn = nn.LSTM(self.input_size, self.hidden_size, self.num_layers,
                            bidirectional=True, batch_first=True)
 
-    def forward(self, input):
-        output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
+    def forward(self, input, length):
+        print(input.size())
+        input = input.view(self.batch_size * self.max_turn, self.max_len, -1)
+        sorted_len = sorted()
+        print(input.size())
+        input = pack_padded_sequence(input, length)
+        output, _ = self.rnn(input, self.init_hidden(self.batch_size * self.max_turn))
         return output[:, -1, :]
 
-    def init_hidden(self, batch):
-        h = Variable(torch.zeros(self.num_layers * 2, batch, self.hidden_size))
-        c = Variable(torch.zeros(self.num_layers * 2, batch, self.hidden_size))
+    def init_hidden(self, batch_size):
+        h = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size))
+        c = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size))
         return h, c
 
 
@@ -139,12 +145,10 @@ class VHREDDecoder(nn.Module):
 
 
 def train():
-    pass
-    """
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)
 
     embed = Embedding(50, 20, dataset.get_embedding())
-    uenc = UtteranceEncoder(20, 20)
+    uenc = UtteranceEncoder(4, 5, 10, 20, 20)
     cenc = ContextEncoder(40, 30, 1)
     dec = HREDDecoder(20, 30, 20, 50)
 
@@ -160,12 +164,17 @@ def train():
         batch = dataset.get_next_batch()
         if batch is None:
             break
-        # print(batch)
+        print(batch)
+        len_turns, len_attrs = get_length(batch)
+        print(len_turns, len_attrs)
         batch = torch.LongTensor(batch)
         embedded = embed(batch.view(batch_size * max_turn, max_len)).view(batch_size, max_turn, max_len, -1)
-        print(embedded)
-        embedded = pack_padded_sequence(embedded, )
-        u_repr = uenc(embedded)
+        print(embedded.size())
+
+        # embedded = pack_padded_sequence(embedded, length, batch_first=True)
+        # print(embedded.batch_sizes)
+        u_repr = uenc(embedded, len_attrs)
+    """
     for dialog in train_data:
         total_loss = 0
         hn = cenc.init_hidden()

@@ -1,6 +1,5 @@
 import numpy as np
 import random
-from unit_test import get_dummy_embedding
 
 
 class Dataset(object):
@@ -66,6 +65,10 @@ class DummyDataset(Dataset):
         num_batch = int(self.data.shape[0] / self.batch_size)
         self.iterator = list(range(num_batch))
         random.shuffle(self.iterator)
+
+
+def get_dummy_embedding(vocabulary_size, embedding_size):
+    return np.random.random((vocabulary_size, embedding_size))
 
 
 if __name__ == '__main__':

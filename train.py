@@ -6,6 +6,7 @@ import sys
 import json
 import pdb
 from data_loader import get_loader
+
 from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -13,6 +14,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 def main(argv):
     dictionary = json.load(open('./data/dictionary.json'))
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 40) 
+
     '''
     for _, (source, target) in enumerate(train_loader):
         u_encoder_h = UEncoder.init_hidden()
