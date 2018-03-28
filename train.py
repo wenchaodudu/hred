@@ -4,7 +4,7 @@ from torch.autograd import Variable
 
 import sys
 from data_loader import get_loader
-from model import UtteranceEncoder, ContextEncoder, Decoder
+from model import UtteranceEncoder, ContextEncoder, HREDDecoder
 
 
 def main(argv):
@@ -12,7 +12,7 @@ def main(argv):
     max_length = 30
     UEncoder = UtteranceEncoder(word_vectors, 300)
     CEncoder = ContextEncoder(300, 300, 100)
-    decoder = Decoder()
+    decoder = HREDDecoder()
     '''
     for _, (source, target) in enumerate(train_loader):
         u_encoder_h = UEncoder.init_hidden()
