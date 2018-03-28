@@ -99,9 +99,9 @@ def collate_fn(data):
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
-    #trg_seqs, trg_lengths = merge(trg_seqs)
+    trg_seqs, trg_lengths = merge(trg)
 
-    return src_seqs, src_lengths, indices, trg, ctc_len
+    return src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_len
 
 
 def get_loader(src_path, trg_path, word2id, batch_size=100):

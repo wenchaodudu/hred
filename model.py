@@ -118,14 +118,14 @@ class HREDDecoder(nn.Module):
     def forward(self, context, word):
         hn = self.init_hidden(context)
         output, _ = self.rnn(word, hn)
-        output = F.tanh(self.output_transform(output))
+        output = self.output_transform(output)
         return output
 
     def generate(self, context, word):
         pass
 
     def init_hidden(self, context):
-        return F.tanh(self.input_transform(context)).view(1, 1, -1)
+        return F.tanh(self.input_transform(context)).view(1, context.size()[0], -1)
 
 
 class VHREDDecoder(nn.Module):

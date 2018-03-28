@@ -120,7 +120,7 @@ def main(argv):
         max_len = max(trg_lengths)
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len, len(dictionary)))
         for t in range(max_len):
-            decoder_output, decoder_hidden, decoder_attn = decoder(
+            decoder_output = decoder(
                 decoder_input, decoder_hidden, encoder_outputs
             )
 
