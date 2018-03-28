@@ -59,7 +59,7 @@ class UtteranceEncoder(nn.Module):
     input: (batch_size, seq_len, embedding_dim)
     output: (batch_size, hidden_size * direction)
     """
-    def __init__(self, input_size, hidden_size, rnn_mode='BiLSTM'):
+    def __init__(self, input_size, hidden_size):
         super(UtteranceEncoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -79,24 +79,22 @@ class UtteranceEncoder(nn.Module):
 
 class ContextEncoder(nn.Module):
     """
-    input: (batch_size, input_size)
+    input: (batch_size, seq_len, input_size)
     output: (batch_size, hidden_size)
     """
-    def __init__(self, input_size, hidden_size, batch_size):
+    def __init__(self, input_size, hidden_size):
         super(ContextEncoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = 1
-        self.batch_size = batch_size
         self.rnn = nn.GRU(self.input_size, self.hidden_size, self.num_layers, batch_first=True)
-        # self.hidden = self.init_hidden()
 
-    def forward(self, input, hidden):
-        output, hn = self.rnn(input.view(input.size()[0], 1, self.input_size), hidden)
-        return output.view(-1, self.hidden_size), hn
+    def forward(self, input):
+        output, _ = self.rnn(input, self.init_hidden(input.size()[0]))
+        return output[:, -1, :]
 
-    def init_hidden(self):
-        return Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size))
+    def init_hidden(self, batch_size):
+        return Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size))
 
 
 class HREDDecoder(nn.Module):
