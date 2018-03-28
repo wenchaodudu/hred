@@ -109,22 +109,25 @@ def main(argv):
         ctc_lengths, perm_idx = torch.LongTensor(ctc_lengths).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
         trg_seqs = trg_seqs[perm_idx]
-        packed_input = pack_padded_sequence(cenc_in, ctc_lengths.numpy(), batch_first=True)
-        packed_output = cenc(cenc_in)
-        cenc_out, _ = pad_packed_sequence(packed_output)
+        packed_input = pack_padded_sequence(cenc_in.cuda(), ctc_lengths.numpy(), batch_first=True)
+        packed_output = cenc(packed_input)
+        pdb.set_trace()
+        cenc_out, _ = pad_packed_sequence(packed_output, batch_first=True)
         '''
         pred = dec(cenc_out, embed(trg_seqs))[0]
         loss = F.cross_entropy(F.softmax(prdt, dim=1), Variable(target).view(-1))
         total_loss += loss.data[0]
         '''
         max_len = max(trg_lengths)
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len, len(dictionary)))
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(dictionary)))
         decoder_hidden = decoder.init_hidden(cenc_out)
         decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
-        for t in range(max_len):
+        for t in range(1, max_len):
             decoder_output, decoder_hidden = decoder(
-                decoder_input, decoder_hidden
+                decoder_hidden, decoder_input
             )
+            decoder_outputs[t-1] = decoder_output
+            decoder_input = trg_seqs[:, t]
 
         optimizer.zero_grad()
         loss.backward()
