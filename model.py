@@ -68,8 +68,9 @@ class UtteranceEncoder(nn.Module):
                            bidirectional=True, batch_first=True)
 
     def forward(self, input):
-        output, _ = self.rnn(input)
-        return output
+        output, hn = self.rnn(input)
+        # return output
+        return hn
 
     def init_hidden(self, batch_size):
         h = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size))
@@ -90,8 +91,9 @@ class ContextEncoder(nn.Module):
         self.rnn = nn.GRU(self.input_size, self.hidden_size, self.num_layers, batch_first=True)
 
     def forward(self, input):
-        output, _ = self.rnn(input)
-        return output
+        output, hn = self.rnn(input)
+        # return output
+        return hn
 
     def init_hidden(self, batch_size):
         return Variable(torch.zeros(self.num_layers, batch_size, self.hidden_size))
