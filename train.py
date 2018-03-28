@@ -93,6 +93,7 @@ def main(argv):
         optim.step()
     '''
     total_loss = 0
+    # src_seqs: (N * max_len * word_dim)
     for _, (src_seqs, src_lengths, indices, trg_seqs, ctc_lengths) in enumerate(train_loader):
         pdb.set_trace()
         src_seqs = embed(src_seqs.cuda())
