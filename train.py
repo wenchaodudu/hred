@@ -40,8 +40,9 @@ def main(config):
         hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
     else:
         hred = torch.load('hred.pt')
+        hred.flatten_parameters()
     params = hred.parameters()
-    optimizer = torch.optim.SGD(params, lr=0.25, momentum=0.0)
+    optimizer = torch.optim.SGD(params, lr=0.25, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=30)
 
     for it in range(10):
@@ -51,6 +52,7 @@ def main(config):
             if _ % config.print_every_n_batches == 1:
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
                 torch.save(hred, 'hred.pt')
+                ave_loss = 0
             loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
             ave_loss += loss.data[0]
             optimizer.zero_grad()
@@ -183,6 +185,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--vhred', type=bool, default=False)
     parser.add_argument('--use_saved', type=bool, default=False)
-    parser.add_argument('--print_every_n_batches', type=int, default=100)
+    parser.add_argument('--print_every_n_batches', type=int, default=1000)
     config = parser.parse_args()
     main(config)

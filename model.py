@@ -219,6 +219,12 @@ class HRED(nn.Module):
 
         return loss
 
+    def flatten_parameters(self):
+        self.u_encoder.rnn.flatten_parameters()
+        self.c_encoder.rnn.flatten_parameters()
+        self.decoder.rnn.flatten_parameters()
+        
+
 def train():
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)
 
