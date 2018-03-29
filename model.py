@@ -130,6 +130,25 @@ class HREDDecoder(nn.Module):
         return F.tanh(self.context_hidden_transform(context.view(1, context.size()[0], -1)))
 
 
+class LatentVariableEncoder(nn.Module):
+    def __init__(self, input_size, output_size):
+        super(LatentVariableEncoder, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+
+        self.mean_transform = nn.Linear(input_size, output_size, bias=True)
+        self.var_transform = nn.Softplus(nn.Linear(input_size, output_size, bias=True)) * 0.01
+
+    def forward(self, input):
+        return self.mean_transform(input), self.var_transform(input)
+
+    def sample(self, input):
+        mean = self.mean_transform(input)
+        var = self.var_transform(input)
+        output = np.random.multivariate_normal(mean, np.diag(var), input.size(0)) 
+        return Variable(torch.from_numpy(output))
+
+
 class VHREDDecoder(nn.Module):
     def __init__(self):
         super(VHREDDecoder, self).__init__()
