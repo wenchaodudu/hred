@@ -34,11 +34,11 @@ def build_word2id(seq_paths, min_word_count):
 
     # create a dictionary and add special tokens
     word2id = {}
-    word2id['<start>'] = 1
-    word2id['<end>'] = 2
+    word2id['<start>'] = 0
+    word2id['<end>'] = 1
     
     # add the words to the word2id dictionary
-    ind = len(word2id) + 1
+    ind = len(word2id)
     for word, count in counter.items():
         if count >= min_word_count:
             word2id[word] = ind

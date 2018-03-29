@@ -5,6 +5,7 @@ from torch.autograd import Variable
 import sys
 import json
 import pdb
+import time
 import numpy as np
 from data_loader import get_loader
 from masked_cel import compute_loss
@@ -14,12 +15,24 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 def main(argv):
-    dictionary = json.load(open('./data/dictionary.json'))
+    dictionary = json.load(open('./dictionary.json'))
+    vocab_size = len(dictionary)
+    word_embedding_dim = 300
     print("Vocabulary size:", len(dictionary))
+
+    print("Loading word vecotrs.")
+    word2vec_file = open('./word2vec.vector')
+    word_vectors = np.random.uniform(low=-0.25, high=0.25, size=(vocab_size, word_embedding_dim))
+    next(word2vec_file)
+    for line in word2vec_file:
+        word, vec = line.split(' ', 1)
+        if word in dictionary:
+            word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
+
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 32) 
 
     cenc_input_size = 512
-    embed = Embedding(len(dictionary), 300).cuda()
+    embed = Embedding(vocab_size, word_embedding_dim, word_vectors).cuda()
     uenc = UtteranceEncoder(300, 256).cuda()
     cenc = ContextEncoder(cenc_input_size, 256).cuda()
     decoder = HREDDecoder(300, 256, 256, len(dictionary)).cuda()
@@ -32,9 +45,11 @@ def main(argv):
     # src_seqs: (N * max_len * word_dim)
     for it in range(10):
         ave_loss = 0
+        last_time = time.time()
         for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
             if _ % 100 == 1:
-                print(ave_loss / min(_, 100))
+                print(ave_loss / min(_, 100), time.time() - last_time)
+                last_time = time.time()
                 torch.save(uenc, 'uenc.pt')
                 torch.save(cenc, 'cenc.pt')
                 torch.save(decoder, 'dec.pt')
