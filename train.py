@@ -30,7 +30,8 @@ def main(config):
         if word in dictionary:
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 32) 
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 32)
+    dev_loader = get_loader('./data/dev.src', './data/dev.tgt', dictionary, 32)
 
     hidden_size = 512
     cenc_input_size = hidden_size * 2
@@ -58,7 +59,13 @@ def main(config):
                 last_time = time.time()
                 torch.save(hred, 'hred.pt')
                 ave_loss = 0
-    
+                # eval on dev
+                dev_loss = 0
+                for i, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(dev_loader):
+                    dev_loss += hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths).data[0]
+                print('dev loss: {}'.format(dev_loss))
+
+
     """
     if not config.use_saved:
         embed = Embedding(vocab_size, word_embedding_dim, word_vectors).cuda()
