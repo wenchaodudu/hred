@@ -10,6 +10,7 @@ from util import get_length
 import pdb
 # from unit_test import *
 #from dataset import *
+from masked_cel import compute_loss
 
 
 class Embedding(nn.Module):
@@ -165,6 +166,58 @@ class VHREDDecoder(nn.Module):
     def forward(self):
         pass
 
+
+class HRED(nn.Module):
+    def __init__(self, dictionary, vocab_size, dim_embedding, init_embedding, hidden_size):
+        super(HRED, self).__init__()
+        self.dictionary = dictionary
+        self.embedding = Embedding(vocab_size, dim_embedding, init_embedding).cuda()
+        self.u_encoder = UtteranceEncoder(dim_embedding, hidden_size).cuda()
+        self.cenc_input_size = hidden_size * 2
+        self.c_encoder = ContextEncoder(self.cenc_input_size, hidden_size).cuda()
+        self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, len(dictionary)).cuda()
+
+    def parameters(self):
+        return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
+               + list(self.decoder.parameters())
+
+    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths):
+        src_seqs = self.embedding(src_seqs.cuda())
+        # src_seqs: (N, max_uttr_len, word_dim)
+        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        uenc_output = self.u_encoder(uenc_packed_input)
+        # output: (N, dim1)
+        _batch_size = len(ctc_lengths)
+        max_len = max(ctc_lengths)
+        cenc_in = Variable(torch.zeros(_batch_size, max_len, self.cenc_input_size).float()).cuda()
+        for i in range(len(indices)):
+            x, y = indices[i]
+            cenc_in[x, y, :] = uenc_output[i]
+        # cenc_in: (batch_size, max_turn, dim1)
+        ctc_lengths, perm_idx = torch.cuda.LongTensor(ctc_lengths).sort(0, descending=True)
+        cenc_in = cenc_in[perm_idx, :, :]
+        # cenc_in: (batch_size, max_turn, dim1)
+        trg_seqs = trg_seqs.cuda()[perm_idx]
+        # trg_seqs: (batch_size, max_trg_len)
+        cenc_packed_input = pack_padded_sequence(cenc_in, ctc_lengths.cpu().numpy(), batch_first=True)
+        cenc_out = self.c_encoder(cenc_packed_input)
+        # cenc_out: (batch_size, dim2)
+        max_len = max(trg_lengths)
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_hidden = self.decoder.init_hidden(cenc_out)
+        # decoder_input = Variable(torch.LongTensor([dictionary['<start>']] * _batch_size))
+        decoder_input = self.embedding(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>']))
+        for t in range(1, max_len):
+            decoder_output, decoder_hidden = self.decoder(
+                decoder_input, decoder_hidden
+            )
+            decoder_outputs[:, t - 1, :] = decoder_output
+            decoder_input = self.embedding(trg_seqs[:, t].cuda())
+
+        loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:]).cuda(),
+                            Variable(torch.LongTensor(trg_lengths) - 1).cuda())
+
+        return loss
 
 def train():
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)
