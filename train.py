@@ -35,6 +35,9 @@ def main(argv):
         for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
             if _ % 100 == 1:
                 print(ave_loss / min(_, 100))
+                torch.save(uenc, 'uenc.pt')
+                torch.save(cenc, 'cenc.pt')
+                torch.save(decoder, 'dec.pt')
                 ave_loss = 0
             src_seqs = embed(src_seqs.cuda())
             # src_seqs: (N, max_uttr_len, word_dim)
