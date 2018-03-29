@@ -30,8 +30,8 @@ def main(config):
         if word in dictionary:
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 32)
-    dev_loader = get_loader('./data/dev.src', './data/dev.tgt', dictionary, 32)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
+    #dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 512
     cenc_input_size = hidden_size * 2
@@ -41,20 +41,24 @@ def main(config):
     else:
         hred = torch.load('hred.pt')
     params = hred.parameters()
-    optimizer = torch.optim.SGD(params, lr=0.001, momentum=0.99)
+    optimizer = torch.optim.SGD(params, lr=0.25, momentum=0.0)
+    #optimizer = torch.optim.Adam(params, lr=30)
 
     for it in range(10):
         ave_loss = 0
         last_time = time.time()
         for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
+            if _ % config.print_every_n_batches == 1:
+                print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
+                torch.save(hred, 'hred.pt')
             loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm(params, 10)
+            torch.nn.utils.clip_grad_norm(params, 0.1)
             optimizer.step()
 
-            if _ % config.print_every_n_batches == 1:
+            if _ % config.print_every_n_batches == 100000:
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
                 last_time = time.time()
                 torch.save(hred, 'hred.pt')
