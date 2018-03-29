@@ -1,14 +1,16 @@
-import nltk
 import json
 import torch
 import torch.utils.data as data
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import pdb
 
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
+        self.max_utt_len = 50
+        self.max_turn = 10
         src_seqs = open(src_path).readlines()
         trg_seqs = open(trg_path).readlines()
         self.src_seqs = [None for x in src_seqs]
@@ -37,21 +39,21 @@ class Dataset(data.Dataset):
 
     def preprocess_src(self, text, word2id):
         """Converts words to ids."""
-        utterances = text.split('__eou__')
+        utterances = text.split('__eou__')[-1-self.max_turn:-1]
         context = []
         for seq in utterances:
             if seq.strip():
-                tokens = seq.split()
+                tokens = seq.split()[:-1][:self.max_utt_len]
                 sequence = []
                 sequence.append(word2id['<start>'])
-                sequence.extend([word2id[token] if token in word2id else word2id['<unk>'] for token in tokens])
+                sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
                 sequence.append(word2id['<end>'])
                 #sequence = torch.LongTensor(sequence)
                 context.append(sequence)
         return context
 
     def preprocess_trg(self, text, word2id):
-        tokens = text.split()[:-1]
+        tokens = text.split()[:-1][:self.max_utt_len]
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<unk>'] for token in tokens])
@@ -79,7 +81,8 @@ def collate_fn(data):
     """
     def merge(sequences):
         lengths = [len(seq) for seq in sequences]
-        padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
+        max_len = max(lengths)
+        padded_seqs = torch.zeros(len(sequences), max_len).long()
         for i, seq in enumerate(sequences):
             end = lengths[i]
             padded_seqs[i, :end] = torch.LongTensor(seq)

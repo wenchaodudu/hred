@@ -36,7 +36,6 @@ def build_word2id(seq_paths, min_word_count):
     word2id = {}
     word2id['<start>'] = 1
     word2id['<end>'] = 2
-    word2id['<unk>'] = 3
     
     # add the words to the word2id dictionary
     ind = len(word2id) + 1
@@ -62,7 +61,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--src_dir', type=str, default='./data')
     parser.add_argument('--dict_path', type=str, default='./data/dictionary.json')
-    parser.add_argument('--min_count', type=int, default=1)
+    parser.add_argument('--min_count', type=int, default=10)
     config = parser.parse_args()
     print (config)
     main(config)
