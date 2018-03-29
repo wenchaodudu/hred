@@ -138,6 +138,17 @@ class VHREDDecoder(nn.Module):
         pass
 
 
+class HRED(nn.Module):
+    def __init__(self):
+        super(HRED, self).__init__()
+        self.u_encoder = None
+        self.c_encoder = None
+        self.decoder = None
+
+    def forward(self):
+
+
+
 def train():
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)
 
