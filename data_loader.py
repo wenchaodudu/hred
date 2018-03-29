@@ -9,8 +9,8 @@ class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
-        self.max_utt_len = 50
-        self.max_turn = 10
+        self.max_utt_len = 30
+        self.max_turn = 5
         src_seqs = open(src_path).readlines()
         trg_seqs = open(trg_path).readlines()
         self.src_seqs = [None for x in src_seqs]
@@ -56,7 +56,7 @@ class Dataset(data.Dataset):
         tokens = text.split()[:-1][:self.max_utt_len]
         sequence = []
         sequence.append(word2id['<start>'])
-        sequence.extend([word2id[token] if token in word2id else word2id['<unk>'] for token in tokens])
+        sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
         sequence.append(word2id['<end>'])
         #sequence = torch.LongTensor(sequence)
         return sequence
