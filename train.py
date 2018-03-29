@@ -39,6 +39,9 @@ def main(argv):
                 torch.save(cenc, 'cenc.pt')
                 torch.save(decoder, 'dec.pt')
                 ave_loss = 0
+                # eval on dev
+
+
             src_seqs = embed(src_seqs.cuda())
             # src_seqs: (N, max_uttr_len, word_dim)
             uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
