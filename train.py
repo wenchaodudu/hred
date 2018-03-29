@@ -7,6 +7,7 @@ import json
 import pdb
 import time
 import numpy as np
+import argparse
 from data_loader import get_loader
 from masked_cel import compute_loss
 
@@ -14,7 +15,7 @@ from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
-def main(argv):
+def main(config):
     dictionary = json.load(open('./dictionary.json'))
     vocab_size = len(dictionary)
     word_embedding_dim = 300
@@ -31,11 +32,20 @@ def main(argv):
 
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 32) 
 
-    cenc_input_size = 512
-    embed = Embedding(vocab_size, word_embedding_dim, word_vectors).cuda()
-    uenc = UtteranceEncoder(300, 256).cuda()
-    cenc = ContextEncoder(cenc_input_size, 256).cuda()
-    decoder = HREDDecoder(300, 256, 256, len(dictionary)).cuda()
+    hidden_size = 512
+    cenc_input_size = hidden_size * 2
+    if not config.use_saved:
+        embed = Embedding(vocab_size, word_embedding_dim, word_vectors).cuda()
+        uenc = UtteranceEncoder(word_embedding_dim, hidden_size).cuda()
+        cenc = ContextEncoder(cenc_input_size, hidden_size).cuda()
+        decoder = HREDDecoder(word_embedding_dim, hidden_size, hidden_size, len(dictionary)).cuda()
+        torch.save(embed, 'embed.pt')
+    else:
+        print("Using saved parameters.")
+        embed = torch.load('embed.pt')
+        uenc = torch.load('uenc.pt')
+        cenc = torch.load('cenc.pt')
+        decoder = torch.load('dec.pt')
 
     params = list(uenc.parameters()) + list(cenc.parameters()) + list(decoder.parameters())
     # print(params)
@@ -47,8 +57,8 @@ def main(argv):
         ave_loss = 0
         last_time = time.time()
         for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
-            if _ % 100 == 1:
-                print(ave_loss / min(_, 100), time.time() - last_time)
+            if _ % config.print_every_n_batches == 1:
+                print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
                 last_time = time.time()
                 torch.save(uenc, 'uenc.pt')
                 torch.save(cenc, 'cenc.pt')
@@ -96,4 +106,8 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    main(sys.argv)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--use_saved', type=bool, default=False)
+    parser.add_argument('--print_every_n_batches', type=int, default=1000)
+    config = parser.parse_args()
+    main(config)
