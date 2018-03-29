@@ -137,16 +137,25 @@ class LatentVariableEncoder(nn.Module):
         self.output_size = output_size
 
         self.mean_transform = nn.Linear(input_size, output_size, bias=True)
-        self.var_transform = nn.Softplus(nn.Linear(input_size, output_size, bias=True)) * 0.01
+        self.var_lin_transform = nn.Linear(input_size, output_size, bias=True)
+        self.var_sp_transform = nn.Softplus()
+
+    def mean(self, input):
+        return self.mean_transform(input)
+
+    def var(self, input):
+        return self.var_sp_transform(self.var_lin_transform(input)) * 0.01
 
     def forward(self, input):
-        return self.mean_transform(input), self.var_transform(input)
+        return self.mean(input), self.var(input)
 
     def sample(self, input):
-        mean = self.mean_transform(input)
-        var = self.var_transform(input)
-        output = np.random.multivariate_normal(mean, np.diag(var), input.size(0)) 
-        return Variable(torch.from_numpy(output))
+        mean = self.mean(input).cpu().data.numpy()
+        var = self.var(input).cpu().data.numpy()
+        output = np.zeros((mean.shape))
+        for x in range(output.shape[0]):
+            output[x] = np.random.multivariate_normal(mean[x], np.diag(var[x])) 
+        return Variable(torch.from_numpy(output)).float()
 
 
 class VHREDDecoder(nn.Module):
