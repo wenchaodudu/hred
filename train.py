@@ -11,7 +11,7 @@ import argparse
 from data_loader import get_loader
 from masked_cel import compute_loss
 
-from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder
+from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder, HRED
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -34,6 +34,32 @@ def main(config):
 
     hidden_size = 512
     cenc_input_size = hidden_size * 2
+
+    if not config.use_saved:
+        hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+    else:
+        hred = torch.load('hred.pt')
+    params = hred.parameters()
+    optimizer = torch.optim.SGD(params, lr=0.001, momentum=0.99)
+
+    for it in range(10):
+        ave_loss = 0
+        last_time = time.time()
+        for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
+            loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
+            ave_loss += loss.data[0]
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm(params, 10)
+            optimizer.step()
+
+            if _ % config.print_every_n_batches == 1:
+                print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
+                last_time = time.time()
+                torch.save(hred, 'hred.pt')
+                ave_loss = 0
+    
+    """
     if not config.use_saved:
         embed = Embedding(vocab_size, word_embedding_dim, word_vectors).cuda()
         uenc = UtteranceEncoder(word_embedding_dim, hidden_size).cuda()
@@ -106,7 +132,7 @@ def main(config):
             loss.backward()
             torch.nn.utils.clip_grad_norm(params, 10)
             optimizer.step()
-
+    """
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
