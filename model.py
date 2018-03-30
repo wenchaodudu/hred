@@ -124,9 +124,6 @@ class HREDDecoder(nn.Module):
         output = self.output_transform(output[:,0,:])
         return output, hn
 
-    def generate(self, context, word):
-        pass
-
     def init_hidden(self, context):
         return F.tanh(self.context_hidden_transform(context.view(1, context.size()[0], -1)))
 
@@ -248,6 +245,9 @@ class HRED(nn.Module):
 
         return loss
 
+    def generate(self, context, max_len):
+        pass
+
     def flatten_parameters(self):
         self.u_encoder.rnn.flatten_parameters()
         self.c_encoder.rnn.flatten_parameters()
@@ -256,7 +256,7 @@ class HRED(nn.Module):
 
 class VHRED(nn.Module):
     def __init__(self, dictionary, vocab_size, dim_embedding, init_embedding, hidden_size):
-        super(HRED, self).__init__()
+        super(VHRED, self).__init__()
         self.dictionary = dictionary
         self.embedding = Embedding(vocab_size, dim_embedding, init_embedding, trainable=True).cuda()
         self.u_encoder = UtteranceEncoder(dim_embedding, hidden_size).cuda()
@@ -272,7 +272,7 @@ class VHRED(nn.Module):
                + list(self.decoder.parameters()) + list(self.embedding.parameters()) \
                + list(self.prior_enc.parameters()) + list(self.post_enc.parameters())
 
-    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths):
+    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight=1):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
         # src_seqs: (N, max_uttr_len, word_dim)
         uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
@@ -312,14 +312,14 @@ class VHRED(nn.Module):
         trg_lengths, perm_idx = trg_lengths.data.sort(0, descending=True)
         trg_seqs = trg_seqs[perm_idx]
         cenc_out = cenc_out[perm_idx]
-        trg_packed = pack_padded_sequence(embed(trg_seqs), trg_lengths.cpu().numpy(), batch_first=True)
+        trg_packed = pack_padded_sequence(self.embedding(trg_seqs), trg_lengths.cpu().numpy(), batch_first=True)
         trg_encoded = self.u_encoder(trg_packed)
         post_mean, post_var = self.post_enc(trg_encoded)
         prior_mean, prior_var = self.prior_enc(cenc_out)
         kl_loss = torch.sum(torch.log(prior_var)) - torch.sum(torch.log(post_var))
         kl_loss += torch.sum((prior_mean - post_mean)**2 / prior_var) 
         kl_loss += torch.sum(post_var / prior_var)
-        loss += kl_loss / (2 * _batch_size)
+        loss += kl_loss / (2 * _batch_size) * kl_weight
 
         return loss
 

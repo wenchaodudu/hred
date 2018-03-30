@@ -11,7 +11,7 @@ import argparse
 from data_loader import get_loader
 from masked_cel import compute_loss
 
-from model import Embedding, UtteranceEncoder, ContextEncoder, HREDDecoder, HRED, LatentVariableEncoder
+from model import HRED, VHRED
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -36,11 +36,20 @@ def main(config):
     hidden_size = 512
     cenc_input_size = hidden_size * 2
 
-    if not config.use_saved:
-        hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+    start_batch = 75000
+
+    if config.vhred:
+        if not config.use_saved:
+            hred = VHRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+        else:
+            hred = torch.load('hred.pt')
+            hred.flatten_parameters()
     else:
-        hred = torch.load('hred.pt')
-        hred.flatten_parameters()
+        if not config.use_saved:
+            hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+        else:
+            hred = torch.load('hred.pt')
+            hred.flatten_parameters()
     params = hred.parameters()
     optimizer = torch.optim.SGD(params, lr=0.25, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=30)
@@ -61,7 +70,11 @@ def main(config):
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
                 torch.save(hred, 'hred.pt')
                 ave_loss = 0
-            loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
+            if config.vhred and it * len(train_loader) + _ <= start_batch:
+                kl_weight = float(it * len(train_loader) + _) / start_batch
+                loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
+            else:
+                loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
