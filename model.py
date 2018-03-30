@@ -209,7 +209,7 @@ class HRED(nn.Module):
         return loss
 
     def generate(self, context, max_len):
-
+        pass
 
     def flatten_parameters(self):
         self.u_encoder.rnn.flatten_parameters()
