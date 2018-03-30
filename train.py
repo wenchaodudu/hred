@@ -44,6 +44,7 @@ def main(config):
     if config.vhred:
         if not config.use_saved:
             hred = VHRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+            print('load hred param')
             _hred = torch.load('hred.pt')
             hred.u_encoder = _hred.u_encoder
             hred.c_encoder = _hred.c_encoder
