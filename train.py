@@ -38,7 +38,8 @@ def main(config):
     hidden_size = 512
     cenc_input_size = hidden_size * 2
 
-    start_batch = 75000
+    start_batch = 50000
+    start_kl_weight = config.start_kl_weight
 
     if config.vhred:
         if not config.use_saved:
@@ -75,14 +76,17 @@ def main(config):
         for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
             if _ % config.print_every_n_batches == 1:
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
-                if config.vhred:
-                    torch.save(hred, 'vhred.pt')
+                if config.save_path:
+                    torch.save(hred, config.save_path)
                 else:
-                    torch.save(hred, 'hred.pt')
+                    if config.vhred:
+                        torch.save(hred, 'vhred.pt')
+                    else:
+                        torch.save(hred, 'hred.pt')
                 ave_loss = 0
             if config.vhred and config.kl_weight and it * len(train_loader) + _ <= start_batch:
-                #kl_weight = float(it * len(train_loader) + _) / start_batch
-                kl_weight = 0.5
+                kl_weight = start_kl_weight + (1 - start_kl_weight) * float(it * len(train_loader) + _) / start_batch
+                # kl_weight = 0.5
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
@@ -99,5 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--print_every_n_batches', type=int, default=1000)
     parser.add_argument('--kl_weight', type=bool, default=True)
     parser.add_argument('--lr', type=float, default=0.25)
+    parser.add_argument('--save_path', type=str, default='')
+    parser.add_argument('--start_kl_weight', type=float, default=0)
     config = parser.parse_args()
     main(config)
