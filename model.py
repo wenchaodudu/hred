@@ -124,8 +124,18 @@ class HREDDecoder(nn.Module):
         output = self.output_transform(output[:,0,:])
         return output, hn
 
-    def generate(self, context, word):
-        pass
+    def generate(self, context, start_symbol, max_len):
+        """
+        :param context: (context_size)
+        :return:
+        """
+        outputs = torch.zeros((max_len, self.output_size))
+        hn = self.init_hidden(context.view(1, -1))
+        input = start_symbol
+        for _ in range(max_len):
+            output, hn = self.forward(input, hn)
+
+
 
     def init_hidden(self, context):
         return F.tanh(self.context_hidden_transform(context.view(1, context.size()[0], -1)))
