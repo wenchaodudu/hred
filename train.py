@@ -46,6 +46,7 @@ def main(config):
         else:
             hred = torch.load('vhred.pt')
             hred.flatten_parameters()
+    else:
         if not config.use_saved:
             hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
         else:
