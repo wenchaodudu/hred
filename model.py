@@ -219,7 +219,7 @@ class HRED(nn.Module):
 
 class VHRED(nn.Module):
     def __init__(self, dictionary, vocab_size, dim_embedding, init_embedding, hidden_size):
-        super(HRED, self).__init__()
+        super(VHRED, self).__init__()
         self.dictionary = dictionary
         self.embedding = Embedding(vocab_size, dim_embedding, init_embedding, trainable=True).cuda()
         self.u_encoder = UtteranceEncoder(dim_embedding, hidden_size).cuda()
