@@ -44,14 +44,13 @@ def main(config):
         else:
             hred = torch.load('vhred.pt')
             hred.flatten_parameters()
-    else:
         if not config.use_saved:
             hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
         else:
             hred = torch.load('hred.pt')
             hred.flatten_parameters()
     params = hred.parameters()
-    optimizer = torch.optim.SGD(params, lr=0.25, momentum=0.99)
+    optimizer = torch.optim.SGD(params, lr=0.025, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=30)
 
     for it in range(5):
@@ -73,7 +72,7 @@ def main(config):
                 else:
                     torch.save(hred, 'hred.pt')
                 ave_loss = 0
-            if config.vhred and it * len(train_loader) + _ <= start_batch:
+            if config.vhred and config.kl_weight and it * len(train_loader) + _ <= start_batch:
                 kl_weight = float(it * len(train_loader) + _) / start_batch
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
@@ -89,5 +88,6 @@ if __name__ == '__main__':
     parser.add_argument('--vhred', type=bool, default=False)
     parser.add_argument('--use_saved', type=bool, default=False)
     parser.add_argument('--print_every_n_batches', type=int, default=1000)
+    parser.add_argument('--kl_weight', type=bool, default=True)
     config = parser.parse_args()
     main(config)
