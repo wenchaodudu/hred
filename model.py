@@ -148,12 +148,11 @@ class LatentVariableEncoder(nn.Module):
         return self.mean(input), self.var(input)
 
     def sample(self, input):
-        mean = self.mean(input).cpu().data.numpy()
-        var = self.var(input).cpu().data.numpy()
+        mean = self.mean(input)
+        var = self.var(input)
         output = np.zeros((mean.shape))
-        for x in range(output.shape[0]):
-            output[x] = np.random.multivariate_normal(mean[x], np.diag(var[x])) 
-        return Variable(torch.from_numpy(output)).float()
+        output = torch.normal(mean, torch.sqrt(var))
+        return output
 
 
 class HRED(nn.Module):
@@ -312,7 +311,7 @@ class VHRED(nn.Module):
         trg_lengths, perm_idx = trg_lengths.data.sort(0, descending=True)
         trg_seqs = trg_seqs[perm_idx]
         cenc_out = cenc_out[perm_idx]
-        trg_packed = pack_padded_sequence(self.embedding(trg_seqs), trg_lengths.cpu().numpy(), batch_first=True)
+        trg_packed = pack_padded_sequence(self.embedding(Variable(trg_seqs)), trg_lengths.cpu().numpy(), batch_first=True)
         trg_encoded = self.u_encoder(trg_packed)
         post_mean, post_var = self.post_enc(trg_encoded)
         prior_mean, prior_var = self.prior_enc(cenc_out)
