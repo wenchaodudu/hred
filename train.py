@@ -50,7 +50,7 @@ def main(config):
             hred = torch.load('hred.pt')
             hred.flatten_parameters()
     params = hred.parameters()
-    optimizer = torch.optim.SGD(params, lr=0.025, momentum=0.99)
+    optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=30)
 
     for it in range(5):
@@ -89,5 +89,6 @@ if __name__ == '__main__':
     parser.add_argument('--use_saved', type=bool, default=False)
     parser.add_argument('--print_every_n_batches', type=int, default=1000)
     parser.add_argument('--kl_weight', type=bool, default=True)
+    parser.add_argument('--lr', type=float, default=0.25)
     config = parser.parse_args()
     main(config)
