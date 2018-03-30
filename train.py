@@ -43,6 +43,11 @@ def main(config):
     if config.vhred:
         if not config.use_saved:
             hred = VHRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+            _hred = torch.load('hred.pt')
+            hred.u_encoder = _hred.u_encoder
+            hred.c_encoder = _hred.c_encoder
+            hred.decoder.rnn = _hred.decoder.rnn
+            hred.flatten_parameters()
         else:
             hred = torch.load('vhred.pt')
             hred.flatten_parameters()
@@ -76,7 +81,8 @@ def main(config):
                     torch.save(hred, 'hred.pt')
                 ave_loss = 0
             if config.vhred and config.kl_weight and it * len(train_loader) + _ <= start_batch:
-                kl_weight = float(it * len(train_loader) + _) / start_batch
+                #kl_weight = float(it * len(train_loader) + _) / start_batch
+                kl_weight = 0.01
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)
