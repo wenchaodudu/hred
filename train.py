@@ -50,7 +50,7 @@ def main(config):
         dev_loss = 0
         count = 0
         for i, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(dev_loader):
-            dev_loss += hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths).data[0]
+            dev_loss += hred.semantic_loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths).data[0]
             count += 1
         print('dev loss: {}'.format(dev_loss / count))
 
