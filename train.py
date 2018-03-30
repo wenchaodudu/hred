@@ -31,7 +31,7 @@ def main(config):
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
 
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
-    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 200)
+    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 512
     cenc_input_size = hidden_size * 2
