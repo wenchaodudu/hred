@@ -262,7 +262,7 @@ class VHRED(nn.Module):
         self.u_encoder = UtteranceEncoder(dim_embedding, hidden_size).cuda()
         self.cenc_input_size = hidden_size * 2
         self.c_encoder = ContextEncoder(self.cenc_input_size, hidden_size).cuda()
-        self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, len(dictionary)).cuda()
+        self.decoder = HREDDecoder(dim_embedding, hidden_size * 2, hidden_size, len(dictionary)).cuda()
         self.hidden_size = hidden_size
         self.prior_enc = LatentVariableEncoder(hidden_size, hidden_size).cuda()
         self.post_enc = LatentVariableEncoder(hidden_size * 2, hidden_size).cuda()
