@@ -51,7 +51,7 @@ def main(config):
             hred = torch.load('hred.pt')
             hred.flatten_parameters()
     params = hred.parameters()
-    optimizer = torch.optim.SGD(params, lr=0.25, momentum=0.99)
+    optimizer = torch.optim.SGD(params, lr=0.025, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=30)
 
     for it in range(5):
