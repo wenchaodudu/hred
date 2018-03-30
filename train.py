@@ -16,6 +16,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 def main(config):
+    print(config)
+
     dictionary = json.load(open('./dictionary.json'))
     vocab_size = len(dictionary)
     word_embedding_dim = 300
