@@ -82,7 +82,7 @@ def main(config):
                 ave_loss = 0
             if config.vhred and config.kl_weight and it * len(train_loader) + _ <= start_batch:
                 #kl_weight = float(it * len(train_loader) + _) / start_batch
-                kl_weight = 0.01
+                kl_weight = 0.5
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths)

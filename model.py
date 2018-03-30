@@ -142,7 +142,7 @@ class LatentVariableEncoder(nn.Module):
         return self.mean_transform(input)
 
     def var(self, input):
-        return self.var_sp_transform(self.var_lin_transform(input))
+        return self.var_sp_transform(self.var_lin_transform(input)) * 0.01
 
     def forward(self, input):
         return self.mean(input), self.var(input)
