@@ -38,12 +38,16 @@ def main(config):
 
     start_batch = 75000
 
-    if config.vhred:
-        hred = torch.load('vhred.pt')
+    if config.path:
+        hred = torch.load(config.path)
         hred.flatten_parameters()
     else:
-        hred = torch.load('hred.pt')
-        hred.flatten_parameters()
+        if config.vhred:
+            hred = torch.load('vhred.pt')
+            hred.flatten_parameters()
+        else:
+            hred = torch.load('hred.pt')
+            hred.flatten_parameters()
 
     max_len = 30
     id2word = dict()
@@ -67,5 +71,6 @@ if __name__ == '__main__':
     parser.add_argument('--vhred', type=bool, default=False)
     parser.add_argument('--use_saved', type=bool, default=False)
     parser.add_argument('--print_every_n_batches', type=int, default=1000)
+    parser.add_argument('--path', type=str, default='')
     config = parser.parse_args()
     main(config)
