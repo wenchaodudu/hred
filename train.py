@@ -50,7 +50,8 @@ def main(config):
             hred.c_encoder = _hred.c_encoder
             hred.decoder.rnn = _hred.decoder.rnn
             hred.decoder.output_transform = _hred.decoder.output_transform
-            hred.decoder.context_hidden_transform.weight[:,0:hidden_size] = _hred.decoder.context_hidden_transform.weight
+            hred.decoder.context_hidden_transform.weight.data[:,0:hidden_size] = \
+                _hred.decoder.context_hidden_transform.weight.data
             hred.flatten_parameters()
         else:
             hred = torch.load('vhred.pt')
