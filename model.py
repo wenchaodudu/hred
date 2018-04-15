@@ -170,7 +170,7 @@ class HRED(nn.Module):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
                + list(self.decoder.parameters()) + list(self.embedding.parameters())
 
-    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths):
+    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, sampling_rate):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
         # src_seqs: (N, max_uttr_len, word_dim)
         uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
@@ -201,7 +201,10 @@ class HRED(nn.Module):
                 decoder_input, decoder_hidden
             )
             decoder_outputs[:, t - 1, :] = decoder_output
-            decoder_input = self.embedding(trg_seqs[:, t])
+            if np.random.uniform() > sampling_rate:
+                decoder_input = self.embedding(trg_seqs[:, t])
+            else:
+                decoder_input = self.embedding(decoder_output.max(1)[1])
 
         loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:]), trg_lengths - 1)
 
@@ -238,7 +241,8 @@ class HRED(nn.Module):
                 decoder_input, decoder_hidden
             )
             decoder_outputs[:, t - 1, :] = decoder_output
-            decoder_input = self.embedding(trg_seqs[:, t])
+            #decoder_input = self.embedding(trg_seqs[:, t])
+            decoder_input = self.embedding(decoder_output.max(1)[1])
 
         loss = compute_semantic_loss(decoder_outputs, Variable(trg_seqs[:, 1:]), trg_lengths - 1)
 
@@ -466,6 +470,118 @@ class VHRED(nn.Module):
         self.c_encoder.rnn.flatten_parameters()
         self.decoder.rnn.flatten_parameters()
         
+
+class AttnDecoderRNN(nn.Module):
+    def __init__(self, dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size):
+        super(AttnDecoderRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.output_size = vocab_size
+        self.input_size = word_embedding_dim
+        self.dropout_p = 0.1
+        self.max_length = 50
+        self.dictionary = dictionary
+
+        self.embedding = Embedding(vocab_size, word_embedding_dim, word_vectors, trainable=False)
+        self.attn = nn.Linear(self.hidden_size + self.input_size, self.max_length)
+        self.attn_combine = nn.Linear(self.hidden_size + self.input_size, self.hidden_size)
+        self.dropout = nn.Dropout(self.dropout_p)
+        self.encoder = nn.GRU(self.input_size, self.hidden_size)
+        self.decoder = nn.GRU(self.input_size, self.hidden_size)
+        self.out = nn.Linear(self.hidden_size, self.output_size)
+
+    def forward(self, src_seqs, src_lengths, trg_seqs, trg_lengths, sampling_rate):
+        src_seqs = self.embedding(Variable(src_seqs.cuda()))
+        max_len = max(trg_lengths)
+        trg_lengths = Variable(torch.cuda.LongTensor(trg_lengths))
+        # src_seqs: (N, max_uttr_len, word_dim)
+        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        encoder_outputs, decoder_hidden = self.encoder(uenc_packed_input)
+        encoder_outputs, _ = pad_packed_sequence(encoder_outputs, batch_first=True)
+        encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+
+        batch_size = len(src_seqs)
+        #decoder_input = self.embedding(Variable(torch.zeros(batch_size).long().cuda().fill_(self.dictionary['<start>'])))
+        decoder_input = self.embedding(Variable(trg_seqs[:, 0].cuda()))
+        decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, len(self.dictionary))).cuda()
+        for t in range(1, max_len):
+            attn_weights = F.softmax(self.attn(torch.cat((decoder_input, decoder_hidden[0]), 1)), dim=1)
+            attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs)[:, 0, :]
+            output = torch.cat((decoder_input, attn_applied), 1)
+            output = self.attn_combine(output).unsqueeze(0)
+            output = F.relu(output)
+            decoder_output, decoder_hidden = self.decoder(decoder_input.unsqueeze(0), output)
+            decoder_outputs[:, t - 1, :] = self.out(decoder_output[0])
+            if np.random.uniform() > sampling_rate:
+                decoder_input = self.embedding(Variable(trg_seqs[:, t].cuda()))
+            else:
+                decoder_input = self.embedding(decoder_output.max(1)[1])
+
+        loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), trg_lengths - 1)
+
+        return loss
+
+    def generate(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
+        src_seqs = self.embedding(Variable(src_seqs.cuda()))
+        # src_seqs: (N, max_uttr_len, word_dim)
+        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        encoder_outputs, decoder_hidden = self.encoder(uenc_packed_input)
+        encoder_outputs, _ = pad_packed_sequence(encoder_outputs, batch_first=True)
+        encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+
+        batch_size = len(src_seqs)
+        decoder_input = self.embedding(Variable(torch.zeros(batch_size).long().cuda().fill_(self.dictionary['<start>'])))
+        decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, len(self.dictionary))).cuda()
+        generations = torch.zeros(batch_size, max_len).long()
+        eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.dictionary['__eou__']))
+        for x in range(batch_size):
+            '''
+            decoder_hidden = self.decoder.init_hidden(cenc_out[x].unsqueeze(0))
+            decoder_input = self.embedding(Variable(torch.zeros(1).long().cuda().fill_(self.dictionary['<start>'])))
+            decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
+            '''
+            attn_weights = F.softmax(self.attn(torch.cat((decoder_input, decoder_hidden[0]), 1)), dim=1)
+            attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs)[:, 0, :]
+            output = torch.cat((decoder_input, attn_applied), 1)
+            output = self.attn_combine(output).unsqueeze(0)
+            output = F.relu(output)
+            decoder_output, decoder_hidden = self.decoder(decoder_input.unsqueeze(0), output)
+
+            logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
+            decoder_input = self.embedding(argtop[0])
+            beam = Variable(torch.zeros(beam_size, max_len)).long().cuda()
+            beam[:, 0] = argtop
+            beam_probs = logprobs[0].clone()
+            beam_eos = (argtop == self.dictionary['__eou__'])[0].data
+            decoder_hidden = decoder_hidden.repeat(1, beam_size, 1)
+            for t in range(max_len-1):
+                decoder_output, decoder_hidden = self.decoder(
+                    decoder_input, decoder_hidden
+                )
+                logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
+                best_probs, best_args = (beam_probs.repeat(top_k, 1).transpose(0, 1) + logprobs).view(-1).topk(beam_size)
+                beam = beam[best_args / top_k, :]
+                beam_eos = beam_eos[(best_args / top_k).data]
+                beam_probs = beam_probs[(best_args / top_k).data]
+                beam[:, t+1] = argtop[(best_args/ top_k).data, (best_args % top_k).data] * Variable(~beam_eos).long() + \
+                               eos_filler * Variable(beam_eos).long()
+                beam_probs[~beam_eos] = (beam_probs[~beam_eos] * (t+1) + best_probs[~beam_eos]) / (t+2)
+                decoder_hidden = decoder_hidden[:, best_args / top_k, :]
+                decoder_input = self.embedding(beam[:, t+1])
+                beam_eos = beam_eos | (beam[:, t+1] == self.dictionary['__eou__']).data
+            best, best_arg = beam_probs.max(0)
+            generations[x] = beam[best_arg.data].data.cpu()
+        return generations
+
+    def initHidden(self):
+        result = Variable(torch.zeros(1, 1, self.hidden_size))
+        if use_cuda:
+            return result.cuda()
+        else:
+            return result
+
+    def parameters(self):
+        return list(self.encoder.parameters()) + list(self.decoder.parameters()) \
+               + list(self.attn.parameters()) + list(self.attn_combine.parameters())
 
 def train():
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)

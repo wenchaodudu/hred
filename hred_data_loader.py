@@ -1,23 +1,32 @@
-import nltk
 import json
 import torch
 import torch.utils.data as data
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import pdb
 
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
-        self.src_seqs = open(src_path).readlines()
-        self.trg_seqs = open(trg_path).readlines()
+        self.max_utt_len = 30
+        self.max_turn = 5
+        src_seqs = open(src_path).readlines()
+        trg_seqs = open(trg_path).readlines()
+        self.src_seqs = [None for x in src_seqs]
+        self.trg_seqs = [None for x in trg_seqs]
+        print("Preprocessing contexts.")
+        for _, line in enumerate(src_seqs):
+            if _ % 100000 == 0:
+                print(_)
+            self.src_seqs[_] = self.preprocess_src(line, word2id)
+        print("Preprocessing responses.")
+        for _, line in enumerate(trg_seqs):
+            if _ % 100000 == 0:
+                print(_)
+            self.trg_seqs[_] = self.preprocess_trg(line, word2id)
         self.num_total_seqs = len(self.src_seqs)
-        self.max_len = 50
         self.word2id = word2id
-        for x in range(self.num_total_seqs):
-            if x % 100000 == 0:
-                print(x)
-            self.src_seqs[x] = self.preprocess(self.src_seqs[x], self.word2id)
-            self.trg_seqs[x] = self.preprocess(self.trg_seqs[x], self.word2id)
 
     def __getitem__(self, index):
         """Returns one data pair (source and target)."""
@@ -28,14 +37,29 @@ class Dataset(data.Dataset):
     def __len__(self):
         return self.num_total_seqs
 
-    def preprocess(self, sequence, word2id):
+    def preprocess_src(self, text, word2id):
         """Converts words to ids."""
-        tokens = sequence.strip().split()[-self.max_len:]
+        utterances = text.split('__eou__')[-1-self.max_turn:-1]
+        context = []
+        for seq in utterances:
+            if seq.strip():
+                tokens = seq.split()[:-1][:self.max_utt_len]
+                sequence = []
+                sequence.append(word2id['<start>'])
+                sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
+                sequence.append(word2id['<end>'])
+                #sequence = torch.LongTensor(sequence)
+                context.append(sequence)
+        return context
+
+    def preprocess_trg(self, text, word2id):
+        tokens = text.split()[:-1][:self.max_utt_len]
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
+        sequence.append(word2id['<end>'])
+        #sequence = torch.LongTensor(sequence)
         return sequence
-
 
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (src_seq, trg_seq).
@@ -57,23 +81,30 @@ def collate_fn(data):
     """
     def merge(sequences):
         lengths = [len(seq) for seq in sequences]
-        padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
+        max_len = max(lengths)
+        padded_seqs = torch.zeros(len(sequences), max_len).long()
         for i, seq in enumerate(sequences):
             end = lengths[i]
-            padded_seqs[i, :end] = torch.LongTensor(seq[:end])
+            padded_seqs[i, :end] = torch.LongTensor(seq)
         return padded_seqs, lengths
 
+    src, trg = zip(*data)
+    ctc_len = [len(x) for x in src]
+    utt_indices = [(x, y) for x in range(len(src)) for y in range(len(src[x]))]
+    src_flatten = [utt for context in src for utt in context]
+    src_data = list(zip(src_flatten, utt_indices))
     # sort a list by sequence length (descending order) to use pack_padded_sequence
-    data.sort(key=lambda x: len(x[0]), reverse=True)
+    src_data.sort(key=lambda x: len(x[0]), reverse=True)
 
     # seperate source and target sequences
-    src_seqs, trg_seqs = zip(*data)
+    #src_seqs, trg_seqs = zip(*data)
+    src_seqs, indices = zip(*src_data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
-    trg_seqs, trg_lengths = merge(trg_seqs)
+    trg_seqs, trg_lengths = merge(trg)
 
-    return src_seqs, src_lengths, trg_seqs, trg_lengths
+    return src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_len
 
 
 def get_loader(src_path, trg_path, word2id, batch_size=100):

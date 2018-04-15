@@ -8,10 +8,10 @@ import pdb
 import time
 import numpy as np
 import argparse
-from hred_data_loader import get_loader
+from data_loader import get_loader
 from masked_cel import compute_loss
 
-from model import HRED, VHRED
+from model import AttnDecoderRNN
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -35,57 +35,30 @@ def main(config):
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 200)
 
-    hidden_size = 512
+    hidden_size = 300
     cenc_input_size = hidden_size * 2
 
     start_batch = 50000
     start_kl_weight = config.start_kl_weight
 
-    if config.vhred:
-        if not config.use_saved:
-            hred = VHRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
-            print('load hred param')
-            _hred = torch.load('hred.pt')
-            hred.u_encoder = _hred.u_encoder
-            hred.c_encoder = _hred.c_encoder
-            hred.decoder.rnn = _hred.decoder.rnn
-            hred.decoder.output_transform = _hred.decoder.output_transform
-            hred.decoder.context_hidden_transform.weight.data[:,0:hidden_size] = \
-                _hred.decoder.context_hidden_transform.weight.data
-            hred.flatten_parameters()
-        else:
-            hred = torch.load('vhred.pt')
-            hred.flatten_parameters()
+    if not config.use_saved:
+        hred = AttnDecoderRNN(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size).cuda()
     else:
-        if not config.use_saved:
-            hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
-        else:
-            hred = torch.load('hred.pt')
-            hred.flatten_parameters()
+        hred = torch.load('hred.pt')
+        hred.flatten_parameters()
     params = hred.parameters()
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=0.25)
 
-    for it in range(4, 8):
+    for it in range(0, 10):
         ave_loss = 0
         last_time = time.time()
-        for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
+        for _, (src_seqs, src_lengths, trg_seqs, trg_lengths) in enumerate(train_loader):
             if _ % config.print_every_n_batches == 1:
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
-                if config.save_path:
-                    torch.save(hred, config.save_path)
-                else:
-                    if config.vhred:
-                        torch.save(hred, 'vhred.pt')
-                    else:
-                        torch.save(hred, 'hred.pt')
+                torch.save(hred, config.save_path)
                 ave_loss = 0
-            if config.vhred and config.kl_weight and it * len(train_loader) + _ <= start_batch:
-                kl_weight = start_kl_weight + (1 - start_kl_weight) * float(it * len(train_loader) + _) / start_batch
-                # kl_weight = 0.5
-                loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
-            else:
-                loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, 0.1*(it+1))
+            loss = hred(src_seqs, src_lengths, trg_seqs, trg_lengths, it*0.1)
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
@@ -95,8 +68,8 @@ def main(config):
         # eval on dev
         dev_loss = 0
         count = 0
-        for i, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(dev_loader):
-            dev_loss += hred.semantic_loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths).data[0]
+        for i, (src_seqs, src_lengths, trg_seqs, trg_lengths) in enumerate(dev_loader):
+            dev_loss += hred(src_seqs, src_lengths, trg_seqs, trg_lengths).data[0]
             count += 1
         print('dev loss: {}'.format(dev_loss / count))
 
@@ -109,7 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--print_every_n_batches', type=int, default=1000)
     parser.add_argument('--kl_weight', type=bool, default=True)
     parser.add_argument('--lr', type=float, default=0.25)
-    parser.add_argument('--save_path', type=str, default='')
+    parser.add_argument('--save_path', type=str, default='./attn.pt')
     parser.add_argument('--start_kl_weight', type=float, default=0)
     config = parser.parse_args()
     main(config)
