@@ -33,7 +33,7 @@ def main(config):
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
 
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
-    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
+    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 200)
 
     hidden_size = 300
     cenc_input_size = hidden_size * 2
@@ -44,7 +44,11 @@ def main(config):
     if not config.use_saved:
         hred = AttnDecoderRNN(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, 'cnn').cuda()
     else:
-        hred = torch.load('attn.pt')
+
+
+
+
+
         hred.flatten_parameters()
     params = hred.parameters()
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)

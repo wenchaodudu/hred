@@ -599,6 +599,10 @@ class AttnDecoderRNN(nn.Module):
         return list(self.encoder.parameters()) + list(self.decoder.parameters()) \
                + list(self.attn.parameters()) + list(self.attn_combine.parameters())
 
+    def flatten_parameters(self):
+        self.u_encoder.rnn.flatten_parameters()
+
+ 
 def train():
     dataset = DummyDataset(4, 16, 5, 10, 50, 20)
 
