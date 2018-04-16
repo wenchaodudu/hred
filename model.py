@@ -600,7 +600,8 @@ class AttnDecoderRNN(nn.Module):
                + list(self.attn.parameters()) + list(self.attn_combine.parameters())
 
     def flatten_parameters(self):
-        self.encoder.rnn.flatten_parameters()
+        #self.encoder.rnn.flatten_parameters()
+        pass
 
  
 def train():
