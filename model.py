@@ -536,7 +536,7 @@ class AttnDecoderRNN(nn.Module):
 
         return loss
 
-    def generate(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
+    def generate(self, src_seqs, src_lengths, max_len, beam_size, top_k):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
         # src_seqs: (N, max_uttr_len, word_dim)
         uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
@@ -600,7 +600,7 @@ class AttnDecoderRNN(nn.Module):
                + list(self.attn.parameters()) + list(self.attn_combine.parameters())
 
     def flatten_parameters(self):
-        self.u_encoder.rnn.flatten_parameters()
+        self.encoder.rnn.flatten_parameters()
 
  
 def train():
