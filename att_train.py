@@ -32,8 +32,8 @@ def main(config):
         if word in dictionary:
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 20)
-    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 40)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
+    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 300
     cenc_input_size = hidden_size * 2
