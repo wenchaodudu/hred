@@ -34,11 +34,11 @@ def build_word2id(seq_paths, min_word_count):
 
     # create a dictionary and add special tokens
     word2id = {}
-    word2id['<start>'] = 0
-    word2id['<end>'] = 1
+    word2id['<start>'] = 1
+    word2id['<end>'] = 2
     
     # add the words to the word2id dictionary
-    ind = len(word2id)
+    ind = len(word2id) + 1
     for word, count in counter.items():
         if count >= min_word_count:
             word2id[word] = ind
@@ -60,7 +60,7 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--src_dir', type=str, default='./data')
-    parser.add_argument('--dict_path', type=str, default='./data/dictionary.json')
+    parser.add_argument('--dict_path', type=str, default='./dictionary.json')
     parser.add_argument('--min_count', type=int, default=10)
     config = parser.parse_args()
     print (config)

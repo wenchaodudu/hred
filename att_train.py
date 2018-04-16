@@ -19,7 +19,7 @@ def main(config):
     print(config)
 
     dictionary = json.load(open('./dictionary.json'))
-    vocab_size = len(dictionary)
+    vocab_size = len(dictionary) + 1
     word_embedding_dim = 300
     print("Vocabulary size:", len(dictionary))
 
@@ -42,7 +42,7 @@ def main(config):
     start_kl_weight = config.start_kl_weight
 
     if not config.use_saved:
-        hred = AttnDecoderRNN(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size).cuda()
+        hred = AttnDecoderRNN(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, 'cnn').cuda()
     else:
         hred = torch.load('hred.pt')
         hred.flatten_parameters()

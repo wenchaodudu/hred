@@ -25,7 +25,7 @@ class Embedding(nn.Module):
         self.num_embeddings, self.embedding_dim = num_embeddings, embedding_dim
         self.weight = Parameter(torch.Tensor(self.num_embeddings, self.embedding_dim))
 
-        self.padding_idx = None
+        self.padding_idx = 0
         self.max_norm = None
         self.norm_type = 2
         self.scale_grad_by_freq = False
@@ -165,6 +165,7 @@ class HRED(nn.Module):
         self.c_encoder = ContextEncoder(self.cenc_input_size, hidden_size).cuda()
         self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, len(dictionary)).cuda()
         self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
 
     def parameters(self):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
@@ -195,7 +196,7 @@ class HRED(nn.Module):
         # cenc_out: (batch_size, dim2)
         decoder_hidden = self.decoder.init_hidden(cenc_out)
         decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
         for t in range(1, max_len):
             decoder_output, decoder_hidden = self.decoder(
                 decoder_input, decoder_hidden
@@ -235,7 +236,7 @@ class HRED(nn.Module):
         # cenc_out: (batch_size, dim2)
         decoder_hidden = self.decoder.init_hidden(cenc_out)
         decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
         for t in range(1, max_len):
             decoder_output, decoder_hidden = self.decoder(
                 decoder_input, decoder_hidden
@@ -317,6 +318,7 @@ class VHRED(nn.Module):
         self.hidden_size = hidden_size
         self.prior_enc = LatentVariableEncoder(hidden_size, hidden_size).cuda()
         self.post_enc = LatentVariableEncoder(hidden_size * 2, hidden_size).cuda()
+        self.vocab_size = vocab_size
 
     def parameters(self):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
@@ -347,7 +349,7 @@ class VHRED(nn.Module):
         cenc_out = self.c_encoder(cenc_packed_input)
         # cenc_out: (batch_size, dim2)
         decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
         sample_prior = self.prior_enc.sample(cenc_out).cuda()
         decoder_hidden = self.decoder.init_hidden(torch.stack((cenc_out, sample_prior), dim=1))
 
@@ -398,7 +400,7 @@ class VHRED(nn.Module):
         cenc_out = self.c_encoder(cenc_packed_input)
         # cenc_out: (batch_size, dim2)
         decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
         sample_prior = self.prior_enc.sample(cenc_out).cuda()
         decoder_hidden = self.decoder.init_hidden(torch.stack((cenc_out, sample_prior), dim=1))
 
@@ -472,7 +474,7 @@ class VHRED(nn.Module):
         
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size):
+    def __init__(self, dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, encoder_type='rnn'):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = vocab_size
@@ -485,24 +487,38 @@ class AttnDecoderRNN(nn.Module):
         self.attn = nn.Linear(self.hidden_size + self.input_size, self.max_length)
         self.attn_combine = nn.Linear(self.hidden_size + self.input_size, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
-        self.encoder = nn.GRU(self.input_size, self.hidden_size)
+        if encoder_type == 'rnn':
+            self.encoder = nn.GRU(self.input_size, self.hidden_size)
+        elif encoder_type == 'cnn':
+            self.encoder = nn.Conv1d(word_embedding_dim, word_embedding_dim, 3, padding=1)
+        else:
+            raise NotImplementedError
         self.decoder = nn.GRU(self.input_size, self.hidden_size)
         self.out = nn.Linear(self.hidden_size, self.output_size)
+        self.encoder_type = encoder_type
 
     def forward(self, src_seqs, src_lengths, trg_seqs, trg_lengths, sampling_rate):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
         max_len = max(trg_lengths)
         trg_lengths = Variable(torch.cuda.LongTensor(trg_lengths))
         # src_seqs: (N, max_uttr_len, word_dim)
-        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
-        encoder_outputs, decoder_hidden = self.encoder(uenc_packed_input)
-        encoder_outputs, _ = pad_packed_sequence(encoder_outputs, batch_first=True)
-        encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+        if self.encoder_type == 'rnn':
+            uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+            encoder_outputs, decoder_hidden = self.encoder(uenc_packed_input)
+            encoder_outputs, _ = pad_packed_sequence(encoder_outputs, batch_first=True)
+            encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+        elif self.encoder_type == 'cnn':
+            encoder_outputs = F.relu(self.encoder(src_seqs.transpose(1, 2)).transpose(1, 2))
+            encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+            decoder_hidden = src_seqs.sum(dim=1) / Variable(torch.FloatTensor(src_lengths).repeat(self.input_size, 1).transpose(0, 1).cuda())
+            decoder_hidden = decoder_hidden.unsqueeze(0)
+        else:
+            raise NotImplementedError
 
-        batch_size = len(src_seqs)
+        batch_size = len(src_lengths)
         #decoder_input = self.embedding(Variable(torch.zeros(batch_size).long().cuda().fill_(self.dictionary['<start>'])))
         decoder_input = self.embedding(Variable(trg_seqs[:, 0].cuda()))
-        decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, self.output_size)).cuda()
         for t in range(1, max_len):
             attn_weights = F.softmax(self.attn(torch.cat((decoder_input, decoder_hidden[0]), 1)), dim=1)
             attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs)[:, 0, :]
@@ -530,7 +546,7 @@ class AttnDecoderRNN(nn.Module):
 
         batch_size = len(src_seqs)
         decoder_input = self.embedding(Variable(torch.zeros(batch_size).long().cuda().fill_(self.dictionary['<start>'])))
-        decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, len(self.dictionary))).cuda()
+        decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, self.output_size)).cuda()
         generations = torch.zeros(batch_size, max_len).long()
         eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.dictionary['__eou__']))
         for x in range(batch_size):
