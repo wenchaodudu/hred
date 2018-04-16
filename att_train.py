@@ -69,7 +69,7 @@ def main(config):
         dev_loss = 0
         count = 0
         for i, (src_seqs, src_lengths, trg_seqs, trg_lengths) in enumerate(dev_loader):
-            dev_loss += hred(src_seqs, src_lengths, trg_seqs, trg_lengths).data[0]
+            dev_loss += hred(src_seqs, src_lengths, trg_seqs, trg_lengths, 0).data[0]
             count += 1
         print('dev loss: {}'.format(dev_loss / count))
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--print_every_n_batches', type=int, default=1000)
     parser.add_argument('--kl_weight', type=bool, default=True)
     parser.add_argument('--lr', type=float, default=0.25)
-    parser.add_argument('--save_path', type=str, default='./attn.pt')
+    parser.add_argument('--save_path', type=str, default='./cnn_attn.pt')
     parser.add_argument('--start_kl_weight', type=float, default=0)
     config = parser.parse_args()
     main(config)
