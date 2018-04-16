@@ -510,7 +510,7 @@ class AttnDecoderRNN(nn.Module):
         elif self.encoder_type == 'cnn':
             encoder_outputs = F.relu(self.encoder(src_seqs.transpose(1, 2)).transpose(1, 2))
             encoder_outputs = encoder_outputs[:, -self.max_length:, :]
-            decoder_hidden = src_seqs.sum(dim=1) / Variable(torch.FloatTensor(src_lengths).repeat(self.input_size, 1).transpose(0, 1).cuda())
+            decoder_hidden = src_seqs.sum(dim=1) / Variable(torch.FloatTensor(src_lengths).unsqueeze(1).cuda())
             decoder_hidden = decoder_hidden.unsqueeze(0)
         else:
             raise NotImplementedError
@@ -540,27 +540,32 @@ class AttnDecoderRNN(nn.Module):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
         # src_seqs: (N, max_uttr_len, word_dim)
         uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
-        encoder_outputs, decoder_hidden = self.encoder(uenc_packed_input)
-        encoder_outputs, _ = pad_packed_sequence(encoder_outputs, batch_first=True)
-        encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+        if self.encoder_type == 'rnn':
+            uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+            encoder_outputs, decoder_initial_hidden = self.encoder(uenc_packed_input)
+            encoder_outputs, _ = pad_packed_sequence(encoder_outputs, batch_first=True)
+            encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+        elif self.encoder_type == 'cnn':
+            encoder_outputs = F.relu(self.encoder(src_seqs.transpose(1, 2)).transpose(1, 2))
+            encoder_outputs = encoder_outputs[:, -self.max_length:, :]
+            decoder_initial_hidden = src_seqs.sum(dim=1) / Variable(torch.FloatTensor(src_lengths).unsqueeze(1).cuda())
+            decoder_initial_hidden = decoder_initial_hidden.unsqueeze(0)
+        else:
+            raise NotImplementedError
 
         batch_size = len(src_seqs)
-        decoder_input = self.embedding(Variable(torch.zeros(batch_size).long().cuda().fill_(self.dictionary['<start>'])))
+        initial_input = self.embedding(Variable(torch.zeros(batch_size).long().cuda().fill_(self.dictionary['<start>'])))
         decoder_outputs = Variable(torch.zeros(batch_size, max_len - 1, self.output_size)).cuda()
         generations = torch.zeros(batch_size, max_len).long()
         eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.dictionary['__eou__']))
         for x in range(batch_size):
-            '''
-            decoder_hidden = self.decoder.init_hidden(cenc_out[x].unsqueeze(0))
-            decoder_input = self.embedding(Variable(torch.zeros(1).long().cuda().fill_(self.dictionary['<start>'])))
-            decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
-            '''
-            attn_weights = F.softmax(self.attn(torch.cat((decoder_input, decoder_hidden[0]), 1)), dim=1)
-            attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs)[:, 0, :]
-            output = torch.cat((decoder_input, attn_applied), 1)
+            attn_weights = F.softmax(self.attn(torch.cat((initial_input[x].unsqueeze(0), decoder_initial_hidden[0, x, :].unsqueeze(0)), 1)), dim=1)
+            attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs[x].unsqueeze(0))[:, 0, :]
+            output = torch.cat((initial_input[x].unsqueeze(0), attn_applied), 1)
             output = self.attn_combine(output).unsqueeze(0)
             output = F.relu(output)
-            decoder_output, decoder_hidden = self.decoder(decoder_input.unsqueeze(0), output)
+            decoder_output, decoder_hidden = self.decoder(initial_input[x].unsqueeze(0).unsqueeze(0), output)
+            decoder_output = self.out(decoder_output[0])
 
             logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
             decoder_input = self.embedding(argtop[0])
@@ -570,9 +575,13 @@ class AttnDecoderRNN(nn.Module):
             beam_eos = (argtop == self.dictionary['__eou__'])[0].data
             decoder_hidden = decoder_hidden.repeat(1, beam_size, 1)
             for t in range(max_len-1):
-                decoder_output, decoder_hidden = self.decoder(
-                    decoder_input, decoder_hidden
-                )
+                attn_weights = F.softmax(self.attn(torch.cat((decoder_input, decoder_hidden[0]), 1)), dim=1)
+                attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs[x].repeat(beam_size, 1, 1))[:, 0, :]
+                output = torch.cat((decoder_input, attn_applied), 1)
+                output = self.attn_combine(output).unsqueeze(0)
+                output = F.relu(output)
+                decoder_output, decoder_hidden = self.decoder(decoder_input.unsqueeze(0), output)
+                decoder_output = self.out(decoder_output[0])
                 logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
                 best_probs, best_args = (beam_probs.repeat(top_k, 1).transpose(0, 1) + logprobs).view(-1).topk(beam_size)
                 beam = beam[best_args / top_k, :]
@@ -586,6 +595,7 @@ class AttnDecoderRNN(nn.Module):
                 beam_eos = beam_eos | (beam[:, t+1] == self.dictionary['__eou__']).data
             best, best_arg = beam_probs.max(0)
             generations[x] = beam[best_arg.data].data.cpu()
+
         return generations
 
     def initHidden(self):
