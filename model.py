@@ -526,7 +526,8 @@ class AttnDecoderRNN(nn.Module):
             output = self.attn_combine(output).unsqueeze(0)
             output = F.relu(output)
             decoder_output, decoder_hidden = self.decoder(decoder_input.unsqueeze(0), output)
-            decoder_outputs[:, t - 1, :] = self.out(decoder_output[0])
+            decoder_output = self.out(decoder_output[0])
+            decoder_outputs[:, t - 1, :] = decoder_output
             if np.random.uniform() > sampling_rate:
                 decoder_input = self.embedding(Variable(trg_seqs[:, t].cuda()))
             else:
