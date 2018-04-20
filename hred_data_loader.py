@@ -10,29 +10,33 @@ class Dataset(data.Dataset):
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
         self.max_utt_len = 30
+        self.max_ctc_len = 120
         self.max_turn = 5
         src_seqs = open(src_path).readlines()
         trg_seqs = open(trg_path).readlines()
-        self.src_seqs = [None for x in src_seqs]
-        self.trg_seqs = [None for x in trg_seqs]
+        self.num_total_seqs = len(self.src_seqs)
+        self.src_seqs = [None for x in range(self.num_total_seqs)]
+        self.trg_seqs = [None for x in range(self.num_total_seqs)]
+        self.ctc_seqs = [None for x in range(self.num_total_seqs)]
         print("Preprocessing contexts.")
         for _, line in enumerate(src_seqs):
             if _ % 100000 == 0:
                 print(_)
             self.src_seqs[_] = self.preprocess_src(line, word2id)
+            self.ctc_seqs[_] = self.preprocess_trg(line, word2id, self.max_ctc_len)
         print("Preprocessing responses.")
         for _, line in enumerate(trg_seqs):
             if _ % 100000 == 0:
                 print(_)
-            self.trg_seqs[_] = self.preprocess_trg(line, word2id)
-        self.num_total_seqs = len(self.src_seqs)
+            self.trg_seqs[_] = self.preprocess_trg(line, word2id, self.max_utt_len)
         self.word2id = word2id
 
     def __getitem__(self, index):
         """Returns one data pair (source and target)."""
         src_seq = self.src_seqs[index]
         trg_seq = self.trg_seqs[index]
-        return src_seq, trg_seq
+        ctc_seq = self.ctc_seqs[index]
+        return src_seq, trg_seq, ctc_seq
 
     def __len__(self):
         return self.num_total_seqs
@@ -52,8 +56,8 @@ class Dataset(data.Dataset):
                 context.append(sequence)
         return context
 
-    def preprocess_trg(self, text, word2id):
-        tokens = text.split()[:-1][:self.max_utt_len]
+    def preprocess_trg(self, text, word2id, max_len):
+        tokens = text.split()[:-1][:max_len]
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
@@ -88,7 +92,8 @@ def collate_fn(data):
             padded_seqs[i, :end] = torch.LongTensor(seq)
         return padded_seqs, lengths
 
-    src, trg = zip(*data)
+    '''
+    src, trg, ctc = zip(*data)
     ctc_len = [len(x) for x in src]
     utt_indices = [(x, y) for x in range(len(src)) for y in range(len(src[x]))]
     src_flatten = [utt for context in src for utt in context]
@@ -105,6 +110,34 @@ def collate_fn(data):
     trg_seqs, trg_lengths = merge(trg)
 
     return src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_len
+    '''
+    src, trg, ctc = zip(*data)
+    turn_len = [len(x) for x in src]
+    ctc_utt_indices = [(x, y) for x in range(len(src)) for y in range(len(src[x]))]
+    utt_flatten = [utt for context in src for utt in context]
+    src_data = list(zip(utt_flatten, ctc_utt_indices))
+    # sort a list by sequence length (descending order) to use pack_padded_sequence
+    src_data.sort(key=lambda x: len(x[0]), reverse=True)
+
+    ctc_data = list(zip(ctc, [*range(len(ctc))]))
+    ctc_data.sort(key=lambda x: len(x[0]), reverse=True)
+    trg_data = list(zip(trg, [*range(len(trg))]))
+    trg_data.sort(key=lambda x: len(x[0]), reverse=True)
+
+    # seperate source and target sequences
+    #src_seqs, trg_seqs = zip(*data)
+    ctc_seqs, ctc_indices = zip(*ctc_data)
+    trg_seqs, trg_indices = zip(*trg_data)
+
+    #src_seqs, trg_seqs = zip(*data)
+    src_seqs, indices = zip(*src_data)
+
+    # merge sequences (from tuple of 1D tensor to 2D tensor)
+    src_seqs, src_lengths = merge(src_seqs)
+    ctc_seqs, ctc_lengths = merge(ctc_seqs)
+    trg_seqs, trg_lengths = merge(trg_seqs)
+
+    return src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len
 
 
 def get_loader(src_path, trg_path, word2id, batch_size=100):
