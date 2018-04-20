@@ -69,7 +69,7 @@ def main(config):
     for it in range(4, 8):
         ave_loss = 0
         last_time = time.time()
-        for _, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(train_loader):
+        for _, (src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
             if _ % config.print_every_n_batches == 1:
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
                 if config.save_path:
@@ -85,7 +85,7 @@ def main(config):
                 # kl_weight = 0.5
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
-                loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, 0.1*(it+1))
+                loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
@@ -95,8 +95,8 @@ def main(config):
         # eval on dev
         dev_loss = 0
         count = 0
-        for i, (src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths) in enumerate(dev_loader):
-            dev_loss += hred.semantic_loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths).data[0]
+        for i, (src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(dev_loader):
+            dev_loss += hred.semantic_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len).data[0]
             count += 1
         print('dev loss: {}'.format(dev_loss / count))
 

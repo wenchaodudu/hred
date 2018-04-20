@@ -14,7 +14,7 @@ class Dataset(data.Dataset):
         self.max_turn = 5
         src_seqs = open(src_path).readlines()
         trg_seqs = open(trg_path).readlines()
-        self.num_total_seqs = len(self.src_seqs)
+        self.num_total_seqs = len(src_seqs)
         self.src_seqs = [None for x in range(self.num_total_seqs)]
         self.trg_seqs = [None for x in range(self.num_total_seqs)]
         self.ctc_seqs = [None for x in range(self.num_total_seqs)]

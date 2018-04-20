@@ -120,7 +120,7 @@ class HREDDecoder(nn.Module):
         self.output_transform = nn.Linear(hidden_size, output_size)
 
     def forward(self, input, hn):
-        output, hn = self.rnn(input.view(input.size()[0], 1, -1), hn)
+        output, hn = self.rnn(input.contiguous().view(input.size()[0], 1, -1), hn)
         output = self.output_transform(output[:,0,:])
         return output, hn
 
@@ -156,45 +156,47 @@ class LatentVariableEncoder(nn.Module):
 
 
 class HRED(nn.Module):
-    def __init__(self, dictionary, vocab_size, dim_embedding, init_embedding, hidden_size):
+    def __init__(self, dictionary, vocab_size, dim_embedding, init_embedding, hidden_size, discriminator=None):
         super(HRED, self).__init__()
         self.dictionary = dictionary
         self.embedding = Embedding(vocab_size, dim_embedding, init_embedding, trainable=True).cuda()
         self.u_encoder = UtteranceEncoder(dim_embedding, hidden_size).cuda()
         self.cenc_input_size = hidden_size * 2
         self.c_encoder = ContextEncoder(self.cenc_input_size, hidden_size).cuda()
-        self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, len(dictionary)).cuda()
+        self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, vocab_size).cuda()
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
+        self.discriminator = discriminator
 
     def parameters(self):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
                + list(self.decoder.parameters()) + list(self.embedding.parameters())
 
-    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, sampling_rate):
+    def encode(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
-        # src_seqs: (N, max_uttr_len, word_dim)
-        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
-        uenc_output = self.u_encoder(uenc_packed_input)
-        # output: (N, dim1)
-        _batch_size = len(ctc_lengths)
-        max_len = max(ctc_lengths)
+        src_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        src_output = self.u_encoder(src_packed_input)
+
+        _batch_size = len(turn_len)
+        max_len = max(turn_len)
         cenc_in = Variable(torch.zeros(_batch_size, max_len, self.cenc_input_size).float()).cuda()
-        for i in range(len(indices)):
-            x, y = indices[i]
-            cenc_in[x, y, :] = uenc_output[i]
-        # cenc_in: (batch_size, max_turn, dim1)
-        ctc_lengths, perm_idx = torch.cuda.LongTensor(ctc_lengths).sort(0, descending=True)
+        for i in range(len(src_indices)):
+            x, y = src_indices[i]
+            cenc_in[x, y, :] = src_output[i]
+        turn_len, perm_idx = torch.cuda.LongTensor(turn_len).sort(0, descending=True)
         cenc_in = cenc_in[perm_idx, :, :]
-        # cenc_in: (batch_size, max_turn, dim1)
-        trg_seqs = trg_seqs.cuda()[perm_idx]
-        trg_lengths = Variable(torch.cuda.LongTensor(trg_lengths))[perm_idx]
-        max_len = trg_lengths.max().data[0]
-        # trg_seqs: (batch_size, max_trg_len)
-        cenc_packed_input = pack_padded_sequence(cenc_in, ctc_lengths.cpu().numpy(), batch_first=True)
+        cenc_packed_input = pack_padded_sequence(cenc_in, turn_len.cpu().numpy(), batch_first=True)
         cenc_out = self.c_encoder(cenc_packed_input)
-        # cenc_out: (batch_size, dim2)
+        cenc_out = cenc_out[perm_idx.sort()[1]]
+
+        return cenc_out
+
+    def decode(self, cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate):
+        trg_seqs = self.embedding(Variable(trg_seqs.cuda()))
+        trg_output = trg_seqs[torch.from_numpy(np.argsort(trg_indices)).cuda()]
         decoder_hidden = self.decoder.init_hidden(cenc_out)
+        _batch_size = cenc_out.size(0)
+        max_len = max(trg_lengths)
         decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
         for t in range(1, max_len):
@@ -203,49 +205,25 @@ class HRED(nn.Module):
             )
             decoder_outputs[:, t - 1, :] = decoder_output
             if np.random.uniform() > sampling_rate:
-                decoder_input = self.embedding(trg_seqs[:, t])
+                decoder_input = trg_seqs[:, t]
             else:
                 decoder_input = self.embedding(decoder_output.max(1)[1])
+            
+        return decoder_outputs
 
-        loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:]), trg_lengths - 1)
+    def loss(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, sampling_rate):
+        cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
+        decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate)
+        trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
+        loss = compute_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
         return loss
 
-    def semantic_loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths):
-        src_seqs = self.embedding(Variable(src_seqs.cuda()))
-        # src_seqs: (N, max_uttr_len, word_dim)
-        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
-        uenc_output = self.u_encoder(uenc_packed_input)
-        # output: (N, dim1)
-        _batch_size = len(ctc_lengths)
-        max_len = max(ctc_lengths)
-        cenc_in = Variable(torch.zeros(_batch_size, max_len, self.cenc_input_size).float()).cuda()
-        for i in range(len(indices)):
-            x, y = indices[i]
-            cenc_in[x, y, :] = uenc_output[i]
-        # cenc_in: (batch_size, max_turn, dim1)
-        ctc_lengths, perm_idx = torch.cuda.LongTensor(ctc_lengths).sort(0, descending=True)
-        cenc_in = cenc_in[perm_idx, :, :]
-        # cenc_in: (batch_size, max_turn, dim1)
-        trg_seqs = trg_seqs.cuda()[perm_idx]
-        trg_lengths = Variable(torch.cuda.LongTensor(trg_lengths))[perm_idx]
-        max_len = trg_lengths.max().data[0]
-        # trg_seqs: (batch_size, max_trg_len)
-        cenc_packed_input = pack_padded_sequence(cenc_in, ctc_lengths.cpu().numpy(), batch_first=True)
-        cenc_out = self.c_encoder(cenc_packed_input)
-        # cenc_out: (batch_size, dim2)
-        decoder_hidden = self.decoder.init_hidden(cenc_out)
-        decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
-        decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
-        for t in range(1, max_len):
-            decoder_output, decoder_hidden = self.decoder(
-                decoder_input, decoder_hidden
-            )
-            decoder_outputs[:, t - 1, :] = decoder_output
-            #decoder_input = self.embedding(trg_seqs[:, t])
-            decoder_input = self.embedding(decoder_output.max(1)[1])
-
-        loss = compute_semantic_loss(decoder_outputs, Variable(trg_seqs[:, 1:]), trg_lengths - 1)
+    def semantic_loss(self, src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len):
+        cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
+        decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, 0)
+        trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
+        loss = compute_semantic_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
         return loss
 
