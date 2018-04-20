@@ -44,8 +44,11 @@ def main(config):
     if not config.use_saved:
         hred = AttnDecoderRNN(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, 'cnn').cuda()
     else:
+        print '*'
         hred = torch.load(config.save_path)
+        print '*'
         hred.flatten_parameters()
+        print '*'
     params = hred.parameters()
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=0.25)
