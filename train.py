@@ -58,7 +58,7 @@ def main(config):
             hred.flatten_parameters()
     else:
         if not config.use_saved:
-            hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size)
+            hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, torch.load('discriminator.pt'))
         else:
             hred = torch.load('hred.pt')
             hred.flatten_parameters()
@@ -66,7 +66,7 @@ def main(config):
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=0.25)
 
-    for it in range(4, 8):
+    for it in range(1, 8):
         ave_loss = 0
         last_time = time.time()
         for _, (src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):

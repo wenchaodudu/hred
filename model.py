@@ -11,6 +11,7 @@ import pdb
 # from unit_test import *
 #from dataset import *
 from masked_cel import compute_loss, compute_semantic_loss
+from gumbel_softmax import gumbel_softmax
 
 
 class Embedding(nn.Module):
@@ -191,7 +192,7 @@ class HRED(nn.Module):
 
         return cenc_out
 
-    def decode(self, cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate):
+    def decode(self, cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate, gumbel=False):
         trg_seqs = self.embedding(Variable(trg_seqs.cuda()))
         trg_output = trg_seqs[torch.from_numpy(np.argsort(trg_indices)).cuda()]
         decoder_hidden = self.decoder.init_hidden(cenc_out)
@@ -203,6 +204,8 @@ class HRED(nn.Module):
             decoder_output, decoder_hidden = self.decoder(
                 decoder_input, decoder_hidden
             )
+            if gumbel:
+                decoder_output = gumbel_softmax(decoder_output, 0.5)
             decoder_outputs[:, t - 1, :] = decoder_output
             if np.random.uniform() > sampling_rate:
                 decoder_input = trg_seqs[:, t]
@@ -226,6 +229,16 @@ class HRED(nn.Module):
         loss = compute_semantic_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
         return loss
+
+    def augmented_loss(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, sampling_rate):
+        cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
+        decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate, True)
+        trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
+        nll_loss = compute_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
+        pdb.set_trace()
+        d_loss = self.discriminator.evaluate(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices)
+        
+        return nll_loss + d_loss
 
     def generate(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
