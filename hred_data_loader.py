@@ -51,17 +51,16 @@ class Dataset(data.Dataset):
                 sequence = []
                 sequence.append(word2id['<start>'])
                 sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
-                sequence.append(word2id['<end>'])
+                sequence.append(word2id['__eou__'])
                 #sequence = torch.LongTensor(sequence)
                 context.append(sequence)
         return context
 
     def preprocess_trg(self, text, word2id, max_len):
-        tokens = text.split()[:-1][:max_len]
+        tokens = text.split()[:max_len]
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
-        sequence.append(word2id['<end>'])
         #sequence = torch.LongTensor(sequence)
         return sequence
 

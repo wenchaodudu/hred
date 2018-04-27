@@ -12,6 +12,7 @@ import pdb
 #from dataset import *
 from masked_cel import compute_loss, compute_semantic_loss
 from gumbel_softmax import gumbel_softmax
+from discriminator import LSTM, DiscUtteranceEncoder
 
 
 class Embedding(nn.Module):
@@ -168,6 +169,7 @@ class HRED(nn.Module):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.discriminator = discriminator
+        self.eou = self.dictionary['__eou__']
 
     def parameters(self):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
@@ -234,11 +236,17 @@ class HRED(nn.Module):
         cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
         decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate, True)
         trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
+        generations = decoder_outputs.max(dim=2)[1]
+        # a hack for getting the lengths of outputs
+        val, gen_lengths = generations.min(dim=1)
+        max_len = trg_output.size(1)
+        gen_lengths[val != 0] = max_len
+        # sort generations by lengths
+        gen_lengths, gen_indices = gen_lengths.data.sort(descending=True)
         nll_loss = compute_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
-        pdb.set_trace()
-        d_loss = self.discriminator.evaluate(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices)
+        d_loss = self.discriminator.evaluate(ctc_seqs, ctc_lengths, ctc_indices, generations.data, gen_lengths.cpu().numpy().tolist(), gen_indices.cpu().numpy())
         
-        return nll_loss + d_loss
+        return nll_loss - torch.log(d_loss).sum() / trg_seqs.size(0) * .01
 
     def generate(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
@@ -602,10 +610,6 @@ class AttnDecoderRNN(nn.Module):
                + list(self.attn.parameters()) + list(self.attn_combine.parameters())
 
     def flatten_parameters(self):
-
-
- 
-
         if self.encoder_type == 'rnn':
             self.encoder.flatten_parameters()
         self.decoder.flatten_parameters()

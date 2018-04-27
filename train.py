@@ -25,7 +25,7 @@ def main(config):
 
     print("Loading word vecotrs.")
     word2vec_file = open('./word2vec.vector')
-    word_vectors = np.random.uniform(low=-0.25, high=0.25, size=(vocab_size, word_embedding_dim))
+    word_vectors = np.random.uniform(low=-0.1, high=0.1, size=(vocab_size, word_embedding_dim))
     next(word2vec_file)
     for line in word2vec_file:
         word, vec = line.split(' ', 1)
@@ -35,7 +35,7 @@ def main(config):
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 200)
 
-    hidden_size = 512
+    hidden_size = 300
     cenc_input_size = hidden_size * 2
 
     start_batch = 50000
@@ -58,10 +58,13 @@ def main(config):
             hred.flatten_parameters()
     else:
         if not config.use_saved:
-            hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, torch.load('discriminator.pt'))
+            disc = torch.load('discriminator.pt')
+            hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, disc)
         else:
             hred = torch.load('hred.pt')
             hred.flatten_parameters()
+    if hred.discriminator is not None:
+        hred.discriminator.u_encoder.rnn.flatten_parameters()
     params = hred.parameters()
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=0.25)
@@ -85,7 +88,8 @@ def main(config):
                 # kl_weight = 0.5
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
-                loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
+                #loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
+                loss = hred.augmented_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
