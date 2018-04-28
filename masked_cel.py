@@ -48,7 +48,8 @@ def compute_loss(logits, target, length):
     # mask: (batch, max_len)
     mask = _sequence_mask(sequence_length=length, max_len=target.size(1))
     losses = losses * mask.float()
-    loss = losses.sum() / length.float().sum()
+    #loss = losses.sum() / length.float().sum()
+    loss = losses.sum() / logits.size(0)
     return loss
 
 def compute_semantic_loss(logits, target, length):

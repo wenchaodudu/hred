@@ -10,6 +10,7 @@ import numpy as np
 import argparse
 from hred_data_loader import get_loader
 from masked_cel import compute_loss
+from gensim.models import Word2Vec
 
 from model import HRED, VHRED
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -23,16 +24,25 @@ def main(config):
     word_embedding_dim = 300
     print("Vocabulary size:", len(dictionary))
 
-    print("Loading word vecotrs.")
-    word2vec_file = open('./word2vec.vector')
     word_vectors = np.random.uniform(low=-0.1, high=0.1, size=(vocab_size, word_embedding_dim))
+    found = 0
+    print("Loading word vecotrs.")
+    '''
+    word2vec_file = open('./word2vec.vector')
     next(word2vec_file)
     for line in word2vec_file:
         word, vec = line.split(' ', 1)
         if word in dictionary:
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
+    '''
+    word2vec = Word2Vec.load('./word2vec.vector')
+    for word in word2vec.wv.vocab:
+        if word in dictionary:
+            word_vectors[dictionary[word]] = word2vec.wv[word]
+            found += 1
+    print(found)
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 80)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 200)
 
     hidden_size = 300
@@ -69,7 +79,7 @@ def main(config):
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
     #optimizer = torch.optim.Adam(params, lr=0.25)
 
-    for it in range(1, 8):
+    for it in range(0, 1):
         ave_loss = 0
         last_time = time.time()
         for _, (src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
@@ -89,13 +99,14 @@ def main(config):
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
                 #loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
-                loss = hred.augmented_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
+                loss = hred.augmented_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1)
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm(params, 0.1)
             optimizer.step()
 
+        '''
         # eval on dev
         dev_loss = 0
         count = 0
@@ -103,6 +114,7 @@ def main(config):
             dev_loss += hred.semantic_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len).data[0]
             count += 1
         print('dev loss: {}'.format(dev_loss / count))
+        '''
 
 
 

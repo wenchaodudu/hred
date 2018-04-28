@@ -62,7 +62,7 @@ class DiscUtteranceEncoder(nn.Module):
     output: (batch_size, hidden_size * direction)
     """
     def __init__(self, input_size, hidden_size, type='gru', dp=0):
-        super(UtteranceEncoder, self).__init__()
+        super(DiscUtteranceEncoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = 1

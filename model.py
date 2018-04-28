@@ -170,10 +170,11 @@ class HRED(nn.Module):
         self.vocab_size = vocab_size
         self.discriminator = discriminator
         self.eou = self.dictionary['__eou__']
+        self.gumbel_noise = Variable(torch.FloatTensor(64)).cuda()
 
     def parameters(self):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
-               + list(self.decoder.parameters()) + list(self.embedding.parameters())
+               + list(self.decoder.parameters())
 
     def encode(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
@@ -194,6 +195,20 @@ class HRED(nn.Module):
 
         return cenc_out
 
+    def gumbel_sampler(self, logits, noise, temperature=0.5):
+        eps = 1e-20
+        noise.data.add_(eps).log_().neg_()
+        noise.data.add_(eps).log_().neg_()
+        y = (logits + noise) / temperature
+        y = F.softmax(y, dim=1)
+
+        max_val, max_idx = torch.max(y, y.dim()-1)
+        y_hard = y == max_val.view(-1,1).expand_as(y)
+        y = (y_hard.float() - y).detach() + y
+
+        return y, max_idx.view(1, -1)
+        
+
     def decode(self, cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate, gumbel=False):
         trg_seqs = self.embedding(Variable(trg_seqs.cuda()))
         trg_output = trg_seqs[torch.from_numpy(np.argsort(trg_indices)).cuda()]
@@ -202,24 +217,38 @@ class HRED(nn.Module):
         max_len = max(trg_lengths)
         decoder_input = self.embedding(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>'])))
         decoder_outputs = Variable(torch.zeros(_batch_size, max_len - 1, self.vocab_size)).cuda()
+        gumbel_outputs = torch.zeros(_batch_size, max_len - 1).long().cuda()
         for t in range(1, max_len):
             decoder_output, decoder_hidden = self.decoder(
                 decoder_input, decoder_hidden
             )
             if gumbel:
-                decoder_output = gumbel_softmax(decoder_output, 0.5)
-            decoder_outputs[:, t - 1, :] = decoder_output
-            if np.random.uniform() > sampling_rate:
-                decoder_input = trg_seqs[:, t]
+                self.gumbel_noise.data.resize_(_batch_size, max_len, self.vocab_size)
+                self.gumbel_noise.data.uniform_(0, 1)
+                one_hot, idx = self.gumbel_sampler(decoder_output, self.gumbel_noise[:, t, :]) 
+                decoder_outputs[:, t - 1, :] = decoder_output
+                if np.random.uniform() > sampling_rate:
+                    decoder_input = trg_seqs[:, t]
+                else:
+                    decoder_input = self.embedding(decoder_output.max(1)[1])
+                gumbel_outputs[:, t - 1] = idx.squeeze(0).data
             else:
-                decoder_input = self.embedding(decoder_output.max(1)[1])
+                decoder_outputs[:, t - 1, :] = decoder_output
+                if np.random.uniform() > sampling_rate:
+                    decoder_input = trg_seqs[:, t]
+                else:
+                    decoder_input = self.embedding(decoder_output.max(1)[1])
             
-        return decoder_outputs
+        if gumbel:
+            return decoder_outputs, gumbel_outputs
+        else:
+            return decoder_outputs
 
     def loss(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, sampling_rate):
         cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
         decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate)
-        trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
+        decoder_outputs = decoder_outputs[list(trg_indices)]
+        trg_output = Variable(trg_seqs.cuda())
         loss = compute_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
         return loss
@@ -227,26 +256,22 @@ class HRED(nn.Module):
     def semantic_loss(self, src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len):
         cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
         decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, 0)
-        trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
+        decoder_outputs = decoder_outputs[list(trg_indices)]
+        trg_output = Variable(trg_seqs.cuda())
         loss = compute_semantic_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
         return loss
 
     def augmented_loss(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, sampling_rate):
         cenc_out = self.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
-        decoder_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate, True)
-        trg_output = Variable(trg_seqs.cuda())[torch.from_numpy(np.argsort(trg_indices)).cuda()]
-        generations = decoder_outputs.max(dim=2)[1]
-        # a hack for getting the lengths of outputs
-        val, gen_lengths = generations.min(dim=1)
-        max_len = trg_output.size(1)
-        gen_lengths[val != 0] = max_len
-        # sort generations by lengths
-        gen_lengths, gen_indices = gen_lengths.data.sort(descending=True)
+        decoder_outputs, gumbel_outputs = self.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate, True)
+        decoder_outputs = decoder_outputs[list(trg_indices)]
+        gumbel_outputs = gumbel_outputs[list(trg_indices)]
+        trg_output = Variable(trg_seqs.cuda())
         nll_loss = compute_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
-        d_loss = self.discriminator.evaluate(ctc_seqs, ctc_lengths, ctc_indices, generations.data, gen_lengths.cpu().numpy().tolist(), gen_indices.cpu().numpy())
+        d_loss = self.discriminator.evaluate(ctc_seqs, ctc_lengths, ctc_indices, gumbel_outputs, [ll - 1 for ll in trg_lengths], trg_indices)
         
-        return nll_loss - torch.log(d_loss).sum() / trg_seqs.size(0) * .01
+        return nll_loss - torch.log(d_loss).sum() / trg_seqs.size(0) * .1
 
     def generate(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
