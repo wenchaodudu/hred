@@ -5,6 +5,7 @@ from gensim.models import Word2Vec
 
 from hred_data_loader import get_loader
 
+
 def main():
     dictionary = json.load(open('./dictionary.json'))
     vocab_size = len(dictionary) + 1
@@ -31,3 +32,6 @@ def main():
         scores = disc.evaluate(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices)
         print(scores)
 
+
+if __name__ == '__main__':
+    main()
