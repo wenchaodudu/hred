@@ -10,7 +10,7 @@ class Dataset(data.Dataset):
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
         self.max_utt_len = 30
-        self.max_ctc_len = 120
+        self.max_ctc_len = 150
         self.max_turn = 5
         src_seqs = open(src_path).readlines()
         trg_seqs = open(trg_path).readlines()
@@ -43,17 +43,20 @@ class Dataset(data.Dataset):
 
     def preprocess_src(self, text, word2id):
         """Converts words to ids."""
-        utterances = text.split('__eou__')[-1-self.max_turn:-1]
+        utterances = text.split('__eou__')[:-1]
         context = []
         for seq in utterances:
             if seq.strip():
-                tokens = seq.split()[:-1][:self.max_utt_len]
+                tokens = seq.split()[:self.max_utt_len]
                 sequence = []
                 sequence.append(word2id['<start>'])
                 sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
                 sequence.append(word2id['__eou__'])
-                #sequence = torch.LongTensor(sequence)
                 context.append(sequence)
+        if len(context) > self.max_turn:
+            return context[-self.max_turn:]
+        else:
+            context = [[]] * (self.max_turn - len(context)) + context
         return context
 
     def preprocess_trg(self, text, word2id, max_len):
@@ -61,7 +64,7 @@ class Dataset(data.Dataset):
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
-        #sequence = torch.LongTensor(sequence)
+        sequence.append(word2id['__eou__'])
         return sequence
 
 def collate_fn(data):
@@ -82,13 +85,13 @@ def collate_fn(data):
         trg_seqs: torch tensor of shape (batch_size, padded_length).
         trg_lengths: list of length (batch_size); valid length for each padded target sequence.
     """
-    def merge(sequences):
+    def merge(sequences, max_len):
         lengths = [len(seq) for seq in sequences]
-        max_len = max(lengths)
         padded_seqs = torch.zeros(len(sequences), max_len).long()
         for i, seq in enumerate(sequences):
-            end = lengths[i]
-            padded_seqs[i, :end] = torch.LongTensor(seq)
+            end = min(lengths[i], max_len)
+            if end:
+                padded_seqs[i, :end] = torch.LongTensor(seq[:end])
         return padded_seqs, lengths
 
     '''
@@ -111,10 +114,10 @@ def collate_fn(data):
     return src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_len
     '''
     src, trg, ctc = zip(*data)
-    turn_len = [len(x) for x in src]
-    ctc_utt_indices = [(x, y) for x in range(len(src)) for y in range(len(src[x]))]
+    turn_len = [sum(1 for y in x if y) for x in src]
+    #ctc_utt_indices = [(x, y) for x in range(len(src)) for y in range(len(src[x]))]
     utt_flatten = [utt for context in src for utt in context]
-    src_data = list(zip(utt_flatten, ctc_utt_indices))
+    src_data = list(zip(utt_flatten, [*range(len(utt_flatten))]))
     # sort a list by sequence length (descending order) to use pack_padded_sequence
     src_data.sort(key=lambda x: len(x[0]), reverse=True)
 
@@ -132,9 +135,9 @@ def collate_fn(data):
     src_seqs, indices = zip(*src_data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
-    src_seqs, src_lengths = merge(src_seqs)
-    ctc_seqs, ctc_lengths = merge(ctc_seqs)
-    trg_seqs, trg_lengths = merge(trg_seqs)
+    src_seqs, src_lengths = merge(src_seqs, 30)
+    ctc_seqs, ctc_lengths = merge(ctc_seqs, 150)
+    trg_seqs, trg_lengths = merge(trg_seqs, 30)
 
     return src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len
 
