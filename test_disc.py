@@ -13,6 +13,7 @@ def main():
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 80)
 
     disc = torch.load('discriminator.pt')
+    disc.flatten_parameters()
 
     for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices,
             turn_len) in enumerate(train_loader):
