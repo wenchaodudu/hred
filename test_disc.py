@@ -3,7 +3,7 @@ import numpy as np
 import json
 from gensim.models import Word2Vec
 
-from hred_data_loader import get_loader
+from data_loader import get_loader
 
 
 def main():
