@@ -411,9 +411,6 @@ class LSTM(nn.Module):
         trg_input = pack_padded_sequence(trg_seqs, trg_lengths, batch_first=True)
         src_output = self.u_encoder(src_input)
         trg_output = self.u_encoder(trg_input)
-        print(np.shape(src_seqs))
-        print(np.shape(src_indices))
-        print(np.shape(np.argsort(src_indices)))
         src_output = src_output[torch.from_numpy(np.argsort(src_indices)).cuda()]
         trg_output = trg_output[torch.from_numpy(np.argsort(trg_indices)).cuda()]
         logits = self.score(src_output, trg_output)
