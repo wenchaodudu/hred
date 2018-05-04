@@ -9,7 +9,7 @@ class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
-        self.max_utt_len = 30
+        self.max_utt_len = 28
         self.max_ctc_len = 150
         self.max_turn = 5
         src_seqs = open(src_path).readlines()
@@ -56,7 +56,7 @@ class Dataset(data.Dataset):
         if len(context) > self.max_turn:
             return context[-self.max_turn:]
         else:
-            context = [[]] * (self.max_turn - len(context)) + context
+            context.extend([[]] * (self.max_turn - len(context)))
         return context
 
     def preprocess_trg(self, text, word2id, max_len):
