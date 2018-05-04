@@ -15,8 +15,8 @@ def main():
     disc = torch.load('discriminator.pt')
     disc.flatten_parameters()
 
-    for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices,
-            turn_len) in enumerate(train_loader):
+    for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices)\
+            in enumerate(train_loader):
         print(trg_seqs)
         scores = disc.evaluate(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices)
         print(scores)
