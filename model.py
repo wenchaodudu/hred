@@ -166,29 +166,50 @@ class HRED(nn.Module):
         self.cenc_input_size = hidden_size * 2
         self.c_encoder = ContextEncoder(self.cenc_input_size, hidden_size).cuda()
         self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, vocab_size).cuda()
+        self.decoder.output_transform.weight = self.embedding.weight
+        self.decoder.output_transform.weight.requires_grad = False
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.discriminator = discriminator
+        if discriminator:
+            self.discriminator = discriminator
         self.eou = self.dictionary['__eou__']
         self.gumbel_noise = Variable(torch.FloatTensor(64)).cuda()
+        self.MSE = nn.MSELoss()
+        '''
+        self.q_network = nn.Sequential(nn.Linear(hidden_size * 2, hidden_size * 3),
+                                       nn.ReLU(),
+                                       nn.Linear(hidden_size * 3 , hidden_size * 3),
+                                       nn.ReLU(), 
+                                       nn.Linear(hidden_size * 3, hidden_size * 3),
+                                       nn.ReLU(),
+                                       nn.Linear(hidden_size * 3, hidden_size)
+                                      ).cuda()
+        '''
 
+    '''
     def parameters(self):
         return list(self.u_encoder.parameters()) + list(self.c_encoder.parameters()) \
                + list(self.decoder.parameters())
+    '''
 
     def encode(self, src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len):
-        src_seqs = self.embedding(Variable(src_seqs.cuda()))
-        src_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
-        src_output = self.u_encoder(src_packed_input)
-
-        _batch_size = len(turn_len)
+        batch_size = len(turn_len)
         max_len = max(turn_len)
-        cenc_in = Variable(torch.zeros(_batch_size, max_len, self.cenc_input_size).float()).cuda()
-        for i in range(len(src_indices)):
-            x, y = src_indices[i]
-            cenc_in[x, y, :] = src_output[i]
+
+        src_seqs = self.embedding(Variable(src_seqs.cuda()))
+        if src_lengths[-1] == 0:
+            nonempty = src_lengths.index(0)
+        else:
+            nonempty = len(src_lengths)
+        src_packed_input = pack_padded_sequence(src_seqs[:nonempty], src_lengths[:nonempty], batch_first=True)
+        src_output = self.u_encoder(src_packed_input)
+        if nonempty < len(src_lengths):
+            src_output = torch.cat((src_output, Variable(torch.zeros(len(src_lengths) - nonempty, self.cenc_input_size)).cuda()), dim=0)
+        src_output = src_output[torch.from_numpy(np.argsort(src_indices)).cuda()]
+        src_output = src_output.view(batch_size, 5, self.cenc_input_size)
+
         turn_len, perm_idx = torch.cuda.LongTensor(turn_len).sort(0, descending=True)
-        cenc_in = cenc_in[perm_idx, :, :]
+        cenc_in = src_output[perm_idx, :, :]
         cenc_packed_input = pack_padded_sequence(cenc_in, turn_len.cpu().numpy(), batch_first=True)
         cenc_out = self.c_encoder(cenc_packed_input)
         cenc_out = cenc_out[perm_idx.sort()[1]]
@@ -271,7 +292,7 @@ class HRED(nn.Module):
         nll_loss = compute_loss(decoder_outputs, trg_output[:, 1:], Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
         d_loss = self.discriminator.evaluate(ctc_seqs, ctc_lengths, ctc_indices, gumbel_outputs, [ll - 1 for ll in trg_lengths], trg_indices)
         
-        return nll_loss - torch.log(d_loss).sum() / trg_seqs.size(0) * .1
+        return nll_loss - torch.log(d_loss).sum() / trg_seqs.size(0) * .3
 
     def generate(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
         src_seqs = self.embedding(Variable(src_seqs.cuda()))
@@ -293,7 +314,7 @@ class HRED(nn.Module):
         cenc_out = self.c_encoder(cenc_packed_input)
         # cenc_out: (batch_size, dim2)
         generations = torch.zeros(_batch_size, max_len).long()
-        eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.dictionary['<end>']))
+        eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.eou))
         for x in range(_batch_size):
             decoder_hidden = self.decoder.init_hidden(cenc_out[x].unsqueeze(0))
             decoder_input = self.embedding(Variable(torch.zeros(1).long().cuda().fill_(self.dictionary['<start>'])))
@@ -303,7 +324,7 @@ class HRED(nn.Module):
             beam = Variable(torch.zeros(beam_size, max_len)).long().cuda()
             beam[:, 0] = argtop
             beam_probs = logprobs[0].clone()
-            beam_eos = (argtop == self.dictionary['<end>'])[0].data
+            beam_eos = (argtop == self.eou)[0].data
             decoder_hidden = decoder_hidden.repeat(1, beam_size, 1)
             for t in range(max_len-1):
                 decoder_output, decoder_hidden = self.decoder(
@@ -319,10 +340,78 @@ class HRED(nn.Module):
                 beam_probs[~beam_eos] = (beam_probs[~beam_eos] * (t+1) + best_probs[~beam_eos]) / (t+2)
                 decoder_hidden = decoder_hidden[:, best_args / top_k, :]
                 decoder_input = self.embedding(beam[:, t+1])
-                beam_eos = beam_eos | (beam[:, t+1] == self.dictionary['<end>']).data
+                beam_eos = beam_eos | (beam[:, t+1] == self.eou).data
             best, best_arg = beam_probs.max(0)
             generations[x] = beam[best_arg.data].data.cpu()
         return generations
+
+    def train_decoder(self, src_seqs, src_lengths, indices, ctc_lengths, max_len, beam_size, top_k):
+        src_seqs = self.embedding(Variable(src_seqs.cuda()))
+        # src_seqs: (N, max_uttr_len, word_dim)
+        uenc_packed_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        uenc_output = self.u_encoder(uenc_packed_input)
+        # output: (N, dim1)
+        _batch_size = len(ctc_lengths)
+        max_ctc_len = max(ctc_lengths)
+        cenc_in = Variable(torch.zeros(_batch_size, max_ctc_len, self.cenc_input_size).float()).cuda()
+        for i in range(len(indices)):
+            x, y = indices[i]
+            cenc_in[x, y, :] = uenc_output[i]
+        # cenc_in: (batch_size, max_turn, dim1)
+        ctc_lengths, perm_idx = torch.cuda.LongTensor(ctc_lengths).sort(0, descending=True)
+        cenc_in = cenc_in[perm_idx, :, :]
+        # cenc_in: (batch_size, max_turn, dim1)
+        cenc_packed_input = pack_padded_sequence(cenc_in, ctc_lengths.cpu().numpy(), batch_first=True)
+        cenc_out = self.c_encoder(cenc_packed_input)
+        # cenc_out: (batch_size, dim2)
+        generations = torch.zeros(_batch_size, max_len).long().cuda()
+        eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.eou))
+        hidden_states = Variable(torch.zeros(_batch_size, self.hidden_size * 2)).cuda()
+        lengths = torch.zeros(_batch_size).long().cuda()
+        for x in range(_batch_size):
+            leng = torch.zeros(beam_size).long().cuda()
+            decoder_hidden = self.decoder.init_hidden(cenc_out[x].unsqueeze(0))
+            decoder_input = self.embedding(Variable(torch.zeros(1).long().cuda().fill_(self.dictionary['<start>'])))
+            decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
+            logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
+            decoder_input = self.embedding(argtop[0])
+            beam = Variable(torch.zeros(beam_size, max_len)).long().cuda()
+            beam[:, 0] = argtop
+            beam_probs = logprobs[0].clone()
+            beam_eos = (argtop == self.eou)[0].data
+            decoder_hidden = decoder_hidden.repeat(1, beam_size, 1)
+            states = decoder_hidden.clone()
+            inputs = decoder_input.clone().unsqueeze(0)
+            for t in range(max_len-1):
+                decoder_output, decoder_hidden = self.decoder(
+                    decoder_input, decoder_hidden
+                )
+                logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
+                best_probs, best_args = (beam_probs.repeat(top_k, 1).transpose(0, 1) + logprobs).view(-1).topk(beam_size)
+                beam = beam[best_args / top_k, :]
+                beam_eos = beam_eos[(best_args / top_k).data]
+                beam_probs = beam_probs[(best_args / top_k).data]
+                beam[:, t+1] = argtop[(best_args/ top_k).data, (best_args % top_k).data] * Variable(~beam_eos).long() + \
+                               eos_filler * Variable(beam_eos).long()
+                beam_probs[~beam_eos] = (beam_probs[~beam_eos] * (t+1) + best_probs[~beam_eos]) / (t+2)
+                decoder_hidden = decoder_hidden[:, best_args / top_k, :]
+                states = torch.cat((states[:, best_args / top_k, :], decoder_hidden), dim=0)
+                decoder_input = self.embedding(beam[:, t+1])
+                inputs = torch.cat((inputs[:, best_args / top_k, :], decoder_input.unsqueeze(0)), dim=0)
+                leng[~beam_eos] += 1
+                beam_eos = beam_eos | (beam[:, t+1] == self.eou).data
+            best, best_arg = beam_probs.max(0)
+            generations[x] = beam[best_arg.data].data.cpu()
+            lengths[x] = leng[best_arg.data][0]
+            len_ind = max(0, lengths[x] - 3)
+            hidden_states[x] = torch.cat((states[len_ind, best_arg.data[0]], inputs[len_ind, best_arg.data[0]]))
+        lengths, perm_idx = lengths.sort(0, descending=True)
+        hidden_states = hidden_states[perm_idx]
+        packed_input = pack_padded_sequence(self.embedding(Variable(generations)), lengths.cpu().numpy(), batch_first=True)
+        output = self.discriminator.u_encoder(packed_input).detach()
+        pred = self.q_network(hidden_states)
+        loss = self.MSE(pred, output)
+        return loss
 
     def flatten_parameters(self):
         self.u_encoder.rnn.flatten_parameters()

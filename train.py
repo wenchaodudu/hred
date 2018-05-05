@@ -75,11 +75,12 @@ def main(config):
             hred.flatten_parameters()
     if hred.discriminator is not None:
         hred.discriminator.u_encoder.rnn.flatten_parameters()
-    params = hred.parameters()
+    params = filter(lambda x: x.requires_grad, hred.parameters())
     optimizer = torch.optim.SGD(params, lr=config.lr, momentum=0.99)
+    #q_optimizer = torch.optim.SGD(hred.q_network.parameters(), lr=0.01)
     #optimizer = torch.optim.Adam(params, lr=0.25)
 
-    for it in range(0, 1):
+    for it in range(0, 10):
         ave_loss = 0
         last_time = time.time()
         for _, (src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
@@ -98,8 +99,8 @@ def main(config):
                 # kl_weight = 0.5
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             else:
-                #loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1*(it+1))
-                loss = hred.augmented_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1)
+                loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.2)
+                #loss = hred.augmented_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1)
             ave_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
@@ -115,6 +116,16 @@ def main(config):
             count += 1
         print('dev loss: {}'.format(dev_loss / count))
         '''
+
+    for it in range(0, 10):
+        ave_loss = 0
+        last_time = time.time()
+        for _, (src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
+            loss = hred.train_decoder(src_seqs, src_lengths, indices, turn_len, 30, 5, 5)
+            ave_loss += loss.data[0]
+            q_optimizer.zero_grad()
+            loss.backward()
+            q_optimizer.step()
 
 
 
