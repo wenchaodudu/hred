@@ -12,6 +12,7 @@ def main():
     inverse_dict = {}
     for word, wid in dictionary.items():
         inverse_dict[wid] = word
+    inverse_dict[0] = '<0>'
 
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 80)
 
