@@ -9,6 +9,10 @@ from hred_data_loader import get_loader
 def main():
     dictionary = json.load(open('./dictionary.json'))
     vocab_size = len(dictionary) + 1
+    inverse_dict = {}
+    for word, wid in dictionary.items():
+        inverse_dict[wid] = word
+    inverse_dict[0] = '<0>'
 
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 80)
 
@@ -17,9 +21,17 @@ def main():
 
     for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths,
             trg_indices, turn_len) in enumerate(train_loader):
-        print(trg_seqs)
-        scores = disc.evaluate(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices)
-        print(scores)
+        try:
+            scores = disc.evaluate(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices)
+            for i in range(scores.shape[0]):
+                print(reconstruct_sent(trg_seqs[i], inverse_dict))
+                print(scores[i])
+        except:
+            pass
+
+
+def reconstruct_sent(seq, dictionary):
+    return ' '.join([dictionary[wid] for wid in filter(lambda x: x != 0, seq)])
 
 
 if __name__ == '__main__':
