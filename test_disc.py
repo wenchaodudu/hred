@@ -21,14 +21,17 @@ def main():
 
     for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths,
             trg_indices, turn_len) in enumerate(train_loader):
-        scores = disc.evaluate(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices)
-        for i in range(scores.shape[0]):
-            print(reconstruct_sent(trg_seqs[i], inverse_dict))
-            print(scores[i])
+        try:
+            scores = disc.evaluate(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices)
+            for i in range(scores.shape[0]):
+                print(reconstruct_sent(trg_seqs[i], inverse_dict))
+                print(scores[i])
+        except:
+            pass
 
 
 def reconstruct_sent(seq, dictionary):
-    return ' '.join([dictionary[wid] for wid in seq])
+    return ' '.join([dictionary[wid] for wid in filter(lambda x: x != 0, seq)])
 
 
 if __name__ == '__main__':
