@@ -161,13 +161,12 @@ class HRED(nn.Module):
     def __init__(self, dictionary, vocab_size, dim_embedding, init_embedding, hidden_size, discriminator=None):
         super(HRED, self).__init__()
         self.dictionary = dictionary
-        self.embedding = Embedding(vocab_size, dim_embedding, init_embedding, trainable=True).cuda()
+        self.embedding = Embedding(vocab_size, dim_embedding, init_embedding, trainable=False).cuda()
         self.u_encoder = UtteranceEncoder(dim_embedding, hidden_size).cuda()
         self.cenc_input_size = hidden_size * 2
         self.c_encoder = ContextEncoder(self.cenc_input_size, hidden_size).cuda()
         self.decoder = HREDDecoder(dim_embedding, hidden_size, hidden_size, vocab_size).cuda()
         self.decoder.output_transform.weight = self.embedding.weight
-        self.decoder.output_transform.weight.requires_grad = False
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         if discriminator:
