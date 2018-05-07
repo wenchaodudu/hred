@@ -74,9 +74,9 @@ def train(config):
 
             if _ % config.print_every_n_batches == 1:
                 print('***')
-                print(ave_g_loss / min(_, config.print_every_n_batches / 0.6),
+                print(ave_ml_loss / min(_, config.print_every_n_batches / 0.3),
+                      ave_g_loss / min(_, config.print_every_n_batches / 0.6),
                       ave_d_loss / min(_, config.print_every_n_batches / 0.1),
-                      ave_ml_loss / min(_, config.print_every_n_batches / 0.1),
                       time.time() - last_time)
                 ave_g_loss, ave_d_loss, ave_ml_loss = 0, 0, 0
                 torch.save(hred, 'hred-ad.pt')
@@ -95,7 +95,7 @@ def train(config):
                     print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
 
             # train generator for 6 batches, then discriminator for 4 batches
-            if _ % 100 < 60:
+            if _ % 100 < 30:
                 trainD, trainG, ML = False, False, True
             elif _ % 100 < 90:
                 trainD, trainG, ML = False, True, False
