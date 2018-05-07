@@ -57,7 +57,7 @@ def train():
         for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices,
                 trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
             cenc_out = hred.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
-            _, decode_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
+            decode_out, gumbel_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
 
             # print(ctc_seqs.size(), ctc_lengths, ctc_indices)
             # print(trg_seqs.size(), trg_lengths, trg_indices)
@@ -72,7 +72,7 @@ def train():
             if trainD:
                 optim_D.zero_grad()
                 disc_label = torch.zeros(trg_seqs.size()[0])
-                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, trg_lengths, trg_indices, disc_label, None)
+                loss = disc.loss(src_seqs, src_lengths, src_indices, gumbel_out, trg_lengths, trg_indices, disc_label, None)
                 disc_label = torch.ones(trg_seqs.size()[0])
                 loss += disc.loss(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
@@ -81,7 +81,7 @@ def train():
             elif trainG:
                 optim_G.zero_grad()
                 disc_label = torch.ones(trg_seqs.size()[0])
-                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, trg_lengths, trg_indices, disc_label, None)
+                loss = disc.loss(src_seqs, src_lengths, src_indices, gumbel_out, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
                 optim_G.step()
 
