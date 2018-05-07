@@ -26,6 +26,7 @@ def train():
     for word, wid in dictionary.items():
         inverse_dict[wid] = word
     inverse_dict[0] = '<0>'
+    EOU = dictionary['__eou__']
 
     vocab_size = len(dictionary) + 1
     word_embedding_dim = 300
@@ -59,14 +60,19 @@ def train():
             print(ctc_seqs.size(), ctc_lengths, ctc_indices)
             print(trg_seqs.size(), trg_lengths, trg_indices)
             print(decode_out.size())
+            print(decode_out)
             # print(reconstruct_sent(decode_out, inverse_dict))
             # print(reconstruct_sent(trg_seqs, inverse_dict))
 
+            # decode_lengths = np.zeros(trg_seqs.size()[0])
+            # for i in range(decode_lengths.shape[0]):
+            #     decode_lengths[i] = 
+
             if trainD:
                 disc_label = torch.zeros(trg_seqs.size()[0])
-                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, None, None, disc_label)
+                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, None, None, disc_label, None)
                 disc_label = torch.ones(trg_seqs.size()[0])
-                loss += disc.loss(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices, disc_label)
+                loss += disc.loss(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
 
             elif trainG:
