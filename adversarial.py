@@ -49,10 +49,13 @@ def train(config):
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 128)
 
-    hidden_size = 300
+    hidden_size = 512
     # hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
-    hred = torch.load('hred-pretrain.pt')
-    hred.flatten_parameters()
+    if config.use_saved:
+        hred = torch.load('hred-pretrain.pt')
+        hred.flatten_parameters()
+    else:
+        hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
     disc = torch.load('discriminator.pt')
     disc.flatten_parameters()
 
