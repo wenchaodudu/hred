@@ -68,6 +68,7 @@ def train(config):
                 trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
 
             if _ % config.print_every_n_batches == 1:
+                print('***')
                 print(ave_g_loss / min(_, config.print_every_n_batches),
                       ave_d_loss / min(_, config.print_every_n_batches),
                       ave_ml_loss / min(_, config.print_every_n_batches),
@@ -83,7 +84,7 @@ def train(config):
             gumbel_indices = trg_indices
 
             if _ % config.print_every_n_batches == 1:
-                for idx in range(gumbel_out.size()[0]):
+                for idx in range(min(gumbel_out.size()[0], 10)):
                     print('---')
                     print(reconstruct_sent(trg_seqs[idx][:trg_lengths[idx]], inverse_dict))
                     print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
