@@ -50,7 +50,8 @@ def train(config):
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 128)
 
     hidden_size = 512
-    # hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
+    sampling_rate = 0.4
+
     if config.use_saved:
         hred = torch.load('hred-ad.pt')
         hred.flatten_parameters()
@@ -65,7 +66,6 @@ def train(config):
     optim_D = torch.optim.SGD(filter(lambda x: x.requires_grad, disc.parameters()), lr=config.lr, momentum=0.9)
 
     for it in range(0, 10):
-
         ave_g_loss, ave_d_loss, ave_ml_loss = 0, 0, 0
         last_time = time.time()
 
@@ -83,7 +83,8 @@ def train(config):
                 torch.save(disc, 'disc-ad.pt')
 
             cenc_out = hred.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
-            decode_out, gumbel_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
+            decode_out, gumbel_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices,
+                                                 sampling_rate=sampling_rate, gumbel=True)
 
             gumbel_lengths = [x - 1 for x in trg_lengths]
             gumbel_indices = trg_indices
@@ -113,6 +114,7 @@ def train(config):
                 loss.backward()
                 ave_d_loss += loss.data[0]
                 optim_D.step()
+                # partial outputs
 
             elif trainG:
                 optim_G.zero_grad()
@@ -125,7 +127,7 @@ def train(config):
             elif ML:
                 optim_G.zero_grad()
                 loss = hred.loss(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs,
-                                 trg_lengths, trg_indices, turn_len, 0.2)
+                                 trg_lengths, trg_indices, turn_len, sampling_rate)
                 loss.backward()
                 optim_G.step()
                 ave_ml_loss += loss.data[0]
