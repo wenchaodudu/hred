@@ -74,8 +74,8 @@ def train(config):
 
             if _ % config.print_every_n_batches == 1:
                 print('***')
-                print(ave_ml_loss / min(_, config.print_every_n_batches / 0.3),
-                      ave_g_loss / min(_, config.print_every_n_batches / 0.6),
+                print(ave_ml_loss / min(_, config.print_every_n_batches / 0.1),
+                      ave_g_loss / min(_, config.print_every_n_batches / 0.8),
                       ave_d_loss / min(_, config.print_every_n_batches / 0.1),
                       time.time() - last_time)
                 ave_g_loss, ave_d_loss, ave_ml_loss = 0, 0, 0
@@ -96,7 +96,7 @@ def train(config):
                     print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
 
             # train generator for 6 batches, then discriminator for 4 batches
-            if _ % 100 < 30:
+            if _ % 100 < 10:
                 trainD, trainG, ML = False, False, True
             elif _ % 100 < 90:
                 trainD, trainG, ML = False, True, False
@@ -106,7 +106,8 @@ def train(config):
             if trainD:
                 optim_D.zero_grad()
                 disc_label = np.zeros(trg_seqs.size()[0])
-                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
+                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices,
+                                 disc_label, None)
                 loss.backward()
                 ave_d_loss += loss.data[0]
                 disc_label = np.ones(trg_seqs.size()[0])
@@ -115,14 +116,36 @@ def train(config):
                 ave_d_loss += loss.data[0]
                 optim_D.step()
                 # partial outputs
+                min_length = min(np.min(gumbel_lengths), 10)
+                for L in range(1, min_length):
+                    optim_D.zero_grad()
+                    disc_label = np.zeros(trg_seqs.size()[0])
+                    loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out[:, 0:L], [L]*len(gumbel_lengths),
+                                     gumbel_indices, disc_label, None)
+                    loss.backward()
+                    ave_d_loss += loss.data[0]
+                    disc_label = np.ones(trg_seqs.size()[0])
+                    loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs[:, 1:L+1], [L] * len(trg_lengths),
+                                     trg_indices, disc_label, None)
+                    loss.backward()
+                    ave_d_loss += loss.data[0]
+                    optim_D.step()
 
             elif trainG:
                 optim_G.zero_grad()
                 disc_label = np.ones(trg_seqs.size()[0])
                 loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
                 loss.backward()
-                optim_G.step()
                 ave_g_loss += loss.data[0]
+                optim_G.step()
+                # partial outputs
+                min_length = min(np.min(gumbel_lengths), 10)
+                for L in range(1, min_length):
+                    loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out[:, 0:L], [L]*len(gumbel_lengths),
+                                     gumbel_indices, disc_label, None)
+                    loss.backward()
+                    ave_g_loss += loss.data[0]
+                    optim_G.step()
 
             elif ML:
                 optim_G.zero_grad()
