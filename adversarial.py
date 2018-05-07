@@ -45,7 +45,7 @@ def train(config):
             found += 1
     print(found)
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 32)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 16)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 300
@@ -87,7 +87,7 @@ def train(config):
             if trainD:
                 optim_D.zero_grad()
                 disc_label = np.zeros(trg_seqs.size()[0])
-                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out.detach(), gumbel_lengths, gumbel_indices, disc_label, None)
+                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
                 disc_label = np.ones(trg_seqs.size()[0])
                 loss += disc.loss(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
