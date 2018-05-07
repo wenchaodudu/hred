@@ -46,7 +46,7 @@ def train(config):
     print(found)
 
     train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
-    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
+    dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 128)
 
     hidden_size = 300
     # hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
@@ -70,19 +70,24 @@ def train(config):
                 print(ave_g_loss / min(_, config.print_every_n_batches),
                       ave_d_loss / min(_, config.print_every_n_batches), time.time() - last_time)
                 ave_g_loss, ave_d_loss = 0, 0
+                torch.save(hred, 'hred-ad.pt')
+                torch.save(disc, 'disc-ad.pt')
 
             cenc_out = hred.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
             decode_out, gumbel_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
+
+            gumbel_lengths = [x - 1 for x in trg_lengths]
+            gumbel_indices = trg_indices
+
+            if _ % config.print_every_n_batches == 1:
+                for idx in range(gumbel_out.size()[0]):
+                    print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
 
             # train generator for 6 batches, then discriminator for 4 batches
             if _ % 10 < 6:
                 trainD, trainG = False, True
             else:
                 trainD, trainG = True, False
-
-            gumbel_lengths = [x -1 for x in trg_lengths]
-            gumbel_indices = trg_indices
-
             if trainD:
                 optim_D.zero_grad()
                 disc_label = np.zeros(trg_seqs.size()[0])
@@ -94,7 +99,6 @@ def train(config):
                 loss.backward()
                 ave_d_loss += loss.data[0]
                 optim_D.step()
-
             elif trainG:
                 optim_G.zero_grad()
                 disc_label = np.ones(trg_seqs.size()[0])
