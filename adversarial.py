@@ -69,7 +69,7 @@ def train():
             else:
                 trainD, trainG = True, False
 
-            gumbel_lengths = trg_lengths - 1
+            gumbel_lengths = [x -1 for x in trg_lengths]
             gumbel_indices = trg_indices
 
             if trainD:
