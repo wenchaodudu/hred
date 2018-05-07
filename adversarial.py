@@ -87,7 +87,7 @@ def train(config):
             if trainD:
                 optim_D.zero_grad()
                 disc_label = np.zeros(trg_seqs.size()[0])
-                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
+                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out.detach(), gumbel_lengths, gumbel_indices, disc_label, None)
                 disc_label = np.ones(trg_seqs.size()[0])
                 loss += disc.loss(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
