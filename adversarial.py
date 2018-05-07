@@ -93,7 +93,7 @@ def train(config):
                 loss.backward()
                 optim_D.step()
                 ave_d_loss += loss
-                print(loss)
+                print('D', loss)
 
             elif trainG:
                 optim_G.zero_grad()
@@ -102,7 +102,7 @@ def train(config):
                 loss.backward()
                 optim_G.step()
                 ave_g_loss += loss
-                print(loss)
+                print('G', loss)
 
 
 def reconstruct_sent(seq, dictionary):
