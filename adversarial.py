@@ -52,12 +52,14 @@ def train(config):
     hidden_size = 512
     # hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
     if config.use_saved:
-        hred = torch.load('hred-pretrain.pt')
+        hred = torch.load('hred-ad.pt')
         hred.flatten_parameters()
+        disc = torch.load('disc-ad.pt')
+        disc.flatten_parameters()
     else:
         hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
-    disc = torch.load('discriminator.pt')
-    disc.flatten_parameters()
+        disc = torch.load('discriminator.pt')
+        disc.flatten_parameters()
 
     optim_G = torch.optim.SGD(filter(lambda x: x.requires_grad, hred.parameters()), lr=config.lr, momentum=0.9)
     optim_D = torch.optim.SGD(filter(lambda x: x.requires_grad, disc.parameters()), lr=config.lr, momentum=0.9)
@@ -72,9 +74,9 @@ def train(config):
 
             if _ % config.print_every_n_batches == 1:
                 print('***')
-                print(ave_g_loss / min(_, config.print_every_n_batches),
-                      ave_d_loss / min(_, config.print_every_n_batches),
-                      ave_ml_loss / min(_, config.print_every_n_batches),
+                print(ave_g_loss / min(_, config.print_every_n_batches / 0.6),
+                      ave_d_loss / min(_, config.print_every_n_batches / 0.1),
+                      ave_ml_loss / min(_, config.print_every_n_batches / 0.1),
                       time.time() - last_time)
                 ave_g_loss, ave_d_loss, ave_ml_loss = 0, 0, 0
                 torch.save(hred, 'hred-ad.pt')
@@ -93,7 +95,7 @@ def train(config):
                     print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
 
             # train generator for 6 batches, then discriminator for 4 batches
-            if _ % 100 < 80:
+            if _ % 100 < 60:
                 trainD, trainG, ML = False, False, True
             elif _ % 100 < 90:
                 trainD, trainG, ML = False, True, False
