@@ -69,10 +69,13 @@ def train():
             else:
                 trainD, trainG = True, False
 
+            gumbel_lengths = trg_lengths - 1
+            gumbel_indices = trg_indices
+
             if trainD:
                 optim_D.zero_grad()
                 disc_label = torch.zeros(trg_seqs.size()[0])
-                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, trg_lengths, trg_indices, disc_label, None)
+                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
                 disc_label = torch.ones(trg_seqs.size()[0])
                 loss += disc.loss(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
@@ -83,7 +86,7 @@ def train():
                 disc_label = torch.ones(trg_seqs.size()[0])
                 print(ctc_lengths, trg_lengths)
                 print(gumbel_out.size())
-                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, trg_lengths, trg_indices, disc_label, None)
+                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
                 loss.backward()
                 optim_G.step()
 
