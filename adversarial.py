@@ -12,6 +12,8 @@ from model import HRED
 from gumbel_softmax import *
 from hred_data_loader import get_loader
 
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1, 2'
 
 class Discriminator(nn.Module):
     def __init__(self):
