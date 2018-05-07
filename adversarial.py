@@ -45,7 +45,7 @@ def train(config):
             found += 1
     print(found)
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 6)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 16)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 300
@@ -60,8 +60,7 @@ def train(config):
 
     for it in range(0, 10):
 
-        ave_g_loss = 0
-        ave_d_loss = 0
+        ave_g_loss, ave_d_loss = 0, 0
         last_time = time.time()
 
         for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices,
@@ -88,11 +87,13 @@ def train(config):
                 optim_D.zero_grad()
                 disc_label = np.zeros(trg_seqs.size()[0])
                 loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out, gumbel_lengths, gumbel_indices, disc_label, None)
-                disc_label = np.ones(trg_seqs.size()[0])
-                loss += disc.loss(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
-                optim_D.step()
                 ave_d_loss += loss.data[0]
+                disc_label = np.ones(trg_seqs.size()[0])
+                loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
+                loss.backward()
+                ave_d_loss += loss.data[0]
+                optim_D.step()
 
             elif trainG:
                 optim_G.zero_grad()
