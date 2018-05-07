@@ -56,7 +56,7 @@ def train():
     for it in range(0, 10):
         for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices,
                 trg_seqs, trg_lengths, trg_indices, turn_len) in enumerate(train_loader):
-            cenc_out = hred.encode(ctc_seqs, ctc_lengths, ctc_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
+            cenc_out = hred.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
             decode_out, gumbel_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
 
             # print(ctc_seqs.size(), ctc_lengths, ctc_indices)
