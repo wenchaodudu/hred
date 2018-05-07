@@ -50,6 +50,8 @@ def train():
     disc = torch.load('discriminator.pt')
 
     trainD, trainG = False, True
+    optim_G = torch.optim.SGD(filter(lambda x: x.requires_grad, hred.parameters()), lr=0.1, momentum=0.9)
+    optim_D = torch.optim.SGD(filter(lambda x: x.requires_grad, disc.parameters()), lr=0.1, momentum=0.9)
 
     for it in range(0, 10):
         for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices,
@@ -57,29 +59,31 @@ def train():
             cenc_out = hred.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
             _, decode_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
 
-            print(ctc_seqs.size(), ctc_lengths, ctc_indices)
-            print(trg_seqs.size(), trg_lengths, trg_indices)
-            print(decode_out.size())
-            print(decode_out)
-            # print(reconstruct_sent(decode_out, inverse_dict))
-            # print(reconstruct_sent(trg_seqs, inverse_dict))
+            # print(ctc_seqs.size(), ctc_lengths, ctc_indices)
+            # print(trg_seqs.size(), trg_lengths, trg_indices)
+            # print(decode_out.size())
+            # print(decode_out)
 
-            # decode_lengths = np.zeros(trg_seqs.size()[0])
-            # for i in range(decode_lengths.shape[0]):
-            #     decode_lengths[i] = 
+            if _ % 10 < 6:
+                trainD, trainG = False, True
+            else:
+                trainD, trainG = True, False
 
             if trainD:
+                optim_D.zero_grad()
                 disc_label = torch.zeros(trg_seqs.size()[0])
-                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, None, None, disc_label, None)
+                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, trg_lengths, trg_indices, disc_label, None)
                 disc_label = torch.ones(trg_seqs.size()[0])
                 loss += disc.loss(src_seqs, src_lengths, src_indices, trg_seqs, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
+                optim_D.step()
 
             elif trainG:
+                optim_G.zero_grad()
                 disc_label = torch.ones(trg_seqs.size()[0])
-                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, None, None, disc_label)
+                loss = disc.loss(src_seqs, src_lengths, src_indices, decode_out, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
-
+                optim_G.step()
 
 
 def reconstruct_sent(seq, dictionary):
