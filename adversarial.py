@@ -90,9 +90,9 @@ def train(config):
                     print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
 
             # train generator for 6 batches, then discriminator for 4 batches
-            if _ % 100 < 40:
+            if _ % 100 < 80:
                 trainD, trainG, ML = False, False, True
-            elif _ % 100 < 80:
+            elif _ % 100 < 90:
                 trainD, trainG, ML = False, True, False
             else:
                 trainD, trainG, ML = True, False, False
