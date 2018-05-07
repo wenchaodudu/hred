@@ -56,8 +56,9 @@ def train():
             cenc_out = hred.encode(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len)
             _, decode_out = hred.decode(cenc_out, trg_seqs, trg_lengths, trg_indices, sampling_rate=0.2, gumbel=True)
 
+            print(ctc_seqs.size(), ctc_lengths.size(), ctc_indices.size())
+            print(trg_seqs.size(), trg_lengths.size(), trg_indices.size())
             print(decode_out.size())
-            print(src_seqs.size())
             # print(reconstruct_sent(decode_out, inverse_dict))
             # print(reconstruct_sent(trg_seqs, inverse_dict))
 
