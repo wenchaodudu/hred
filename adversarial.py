@@ -45,7 +45,7 @@ def train(config):
             found += 1
     print(found)
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 16)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 64)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 300
