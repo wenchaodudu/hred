@@ -50,7 +50,7 @@ def train(config):
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 128)
 
     hidden_size = 512
-    sampling_rate = 0.4
+    sampling_rate = 0.8
 
     if config.use_saved:
         hred = torch.load('hred-ad.pt')
