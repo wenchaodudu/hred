@@ -8,7 +8,7 @@ import pdb
 import time
 import numpy as np
 import argparse
-from data_loader import get_loader
+from hred_data_loader import get_loader
 from masked_cel import compute_loss
 
 from model import HRED, VHRED
@@ -22,6 +22,7 @@ def main(config):
     word_embedding_dim = 300
     print("Vocabulary size:", len(dictionary))
 
+    '''
     print("Loading word vecotrs.")
     word2vec_file = open('./word2vec.vector')
     word_vectors = np.random.uniform(low=-0.25, high=0.25, size=(vocab_size, word_embedding_dim))
@@ -30,6 +31,7 @@ def main(config):
         word, vec = line.split(' ', 1)
         if word in dictionary:
             word_vectors[dictionary[word]] = np.fromstring(vec, dtype=np.float32, sep=' ')
+    '''
 
     test_loader = get_loader('./data/test.src', './data/test.tgt', dictionary, 64)
 
@@ -54,12 +56,12 @@ def main(config):
     for k, v in dictionary.items():
         id2word[v] = k
 
-    for src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths in test_loader:
-        responses = hred.generate(src_seqs, src_lengths, indices, ctc_lengths, max_len, 5, 5)
+    for src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len in test_loader:
+        responses = hred.generate(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, turn_len, max_len, 10, 10)
         for x in range(responses.size(0)):
             for y in range(max_len):
                 sys.stdout.write(id2word[responses[x, y]])
-                if responses[x, y] == dictionary['<end>']:
+                if responses[x, y] == dictionary['__eou__']:
                     sys.stdout.write('\n')
                     break
                 else:

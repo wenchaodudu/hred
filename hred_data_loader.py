@@ -9,7 +9,7 @@ class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, src_path, trg_path, word2id):
         """Reads source and target sequences from txt files."""
-        self.max_utt_len = 28
+        self.max_utt_len = 30
         self.max_ctc_len = 150
         self.max_turn = 5
         src_seqs = open(src_path).readlines()
@@ -49,9 +49,7 @@ class Dataset(data.Dataset):
             if seq.strip():
                 tokens = seq.split()[:self.max_utt_len]
                 sequence = []
-                sequence.append(word2id['<start>'])
                 sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
-                sequence.append(word2id['__eou__'])
                 context.append(sequence)
         if len(context) > self.max_turn:
             return context[-self.max_turn:]
@@ -60,7 +58,7 @@ class Dataset(data.Dataset):
         return context
 
     def preprocess_trg(self, text, word2id, max_len):
-        tokens = text.split()[:max_len]
+        tokens = text.split()[:-1][:max_len-2]
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
@@ -142,7 +140,7 @@ def collate_fn(data):
     return src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len
 
 
-def get_loader(src_path, trg_path, word2id, batch_size=100):
+def get_loader(src_path, trg_path, word2id, batch_size=100, shuffle=False):
     """Returns data loader for custom dataset.
 
     Args:
@@ -163,7 +161,7 @@ def get_loader(src_path, trg_path, word2id, batch_size=100):
     # please see collate_fn for details
     data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                               batch_size=batch_size,
-                                              shuffle=True,
+                                              shuffle=shuffle,
                                               collate_fn=collate_fn)
 
     return data_loader
