@@ -15,6 +15,7 @@ from hred_data_loader import get_loader
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '1, 2'
 
+
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
@@ -60,7 +61,7 @@ def train(config):
 
     for it in range(0, 10):
 
-        ave_g_loss, ave_d_loss = 0, 0
+        ave_g_loss, ave_d_loss, ave_ml_loss = 0, 0, 0
         last_time = time.time()
 
         for _, (src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices,
@@ -68,8 +69,10 @@ def train(config):
 
             if _ % config.print_every_n_batches == 1:
                 print(ave_g_loss / min(_, config.print_every_n_batches),
-                      ave_d_loss / min(_, config.print_every_n_batches), time.time() - last_time)
-                ave_g_loss, ave_d_loss = 0, 0
+                      ave_d_loss / min(_, config.print_every_n_batches),
+                      ave_ml_loss / min(_, config.print_every_n_batches),
+                      time.time() - last_time)
+                ave_g_loss, ave_d_loss, ave_ml_loss = 0, 0, 0
                 torch.save(hred, 'hred-ad.pt')
                 torch.save(disc, 'disc-ad.pt')
 
@@ -81,13 +84,18 @@ def train(config):
 
             if _ % config.print_every_n_batches == 1:
                 for idx in range(gumbel_out.size()[0]):
+                    print('---')
+                    print(reconstruct_sent(trg_seqs[idx][:trg_lengths[idx]], inverse_dict))
                     print(reconstruct_sent(gumbel_out[idx][:gumbel_lengths[idx]], inverse_dict))
 
             # train generator for 6 batches, then discriminator for 4 batches
-            if _ % 10 < 6:
-                trainD, trainG = False, True
+            if _ % 100 < 40:
+                trainD, trainG, ML = False, False, True
+            elif _ % 100 < 80:
+                trainD, trainG, ML = False, True, False
             else:
-                trainD, trainG = True, False
+                trainD, trainG, ML = True, False, False
+
             if trainD:
                 optim_D.zero_grad()
                 disc_label = np.zeros(trg_seqs.size()[0])
@@ -99,6 +107,7 @@ def train(config):
                 loss.backward()
                 ave_d_loss += loss.data[0]
                 optim_D.step()
+
             elif trainG:
                 optim_G.zero_grad()
                 disc_label = np.ones(trg_seqs.size()[0])
@@ -107,9 +116,18 @@ def train(config):
                 optim_G.step()
                 ave_g_loss += loss.data[0]
 
+            elif ML:
+                optim_G.zero_grad()
+                loss = hred.loss(src_seqs, src_lengths, src_indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs,
+                                 trg_lengths, trg_indices, turn_len, 0.2)
+                loss.backward()
+                optim_G.step()
+                ave_ml_loss += loss.data[0]
+
 
 def reconstruct_sent(seq, dictionary):
     return ' '.join([dictionary[wid] for wid in filter(lambda x: x != 0, seq)])
+
 
 if __name__ == '__main__':
     import argparse
