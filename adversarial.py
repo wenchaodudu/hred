@@ -45,7 +45,7 @@ def train(config):
             found += 1
     print(found)
 
-    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 16)
+    train_loader = get_loader('./data/train.src', './data/train.tgt', dictionary, 4)
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 64)
 
     hidden_size = 300
@@ -93,7 +93,6 @@ def train(config):
                 loss.backward()
                 optim_D.step()
                 ave_d_loss += loss
-                print('D', loss)
 
             elif trainG:
                 optim_G.zero_grad()
@@ -102,7 +101,6 @@ def train(config):
                 loss.backward()
                 optim_G.step()
                 ave_g_loss += loss
-                print('G', loss)
 
 
 def reconstruct_sent(seq, dictionary):
