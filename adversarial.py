@@ -52,9 +52,9 @@ def train(config):
     hidden_size = 512
     # hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
     if config.use_saved:
-        hred = torch.load('hred-ad.pt')
+        hred = torch.load('hred-ad-0242.pt')
         hred.flatten_parameters()
-        disc = torch.load('disc-ad.pt')
+        disc = torch.load('disc-ad-0242.pt')
         disc.flatten_parameters()
     else:
         hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
