@@ -13,7 +13,7 @@ from gumbel_softmax import *
 from hred_data_loader import get_loader
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1, 2'
 
 class Discriminator(nn.Module):
     def __init__(self):
@@ -51,7 +51,9 @@ def train(config):
     hidden_size = 300
     # hred = HRED(dictionary, vocab_size, word_embedding_dim, word_vectors, hidden_size, None)
     hred = torch.load('hred-pretrain.pt')
+    hred.flatten_parameters()
     disc = torch.load('discriminator.pt')
+    disc.flatten_parameters()
 
     optim_G = torch.optim.SGD(filter(lambda x: x.requires_grad, hred.parameters()), lr=config.lr, momentum=0.9)
     optim_D = torch.optim.SGD(filter(lambda x: x.requires_grad, disc.parameters()), lr=config.lr, momentum=0.9)
