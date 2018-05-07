@@ -81,6 +81,7 @@ def train():
             elif trainG:
                 optim_G.zero_grad()
                 disc_label = torch.ones(trg_seqs.size()[0])
+                print(src_lengths, trg_lengths)
                 loss = disc.loss(src_seqs, src_lengths, src_indices, gumbel_out, trg_lengths, trg_indices, disc_label, None)
                 loss.backward()
                 optim_G.step()
