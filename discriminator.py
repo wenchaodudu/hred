@@ -420,7 +420,20 @@ class LSTM(nn.Module):
     def flatten_parameters(self):
         self.u_encoder.rnn.flatten_parameters()
 
+    def encode_context(self, src_seqs, src_lengths, src_indices):
+        src_seqs = self.embedding(Variable(src_seqs.cuda()))
+        src_input = pack_padded_sequence(src_seqs, src_lengths, batch_first=True)
+        src_output = self.u_encoder(src_input)
+        src_output = src_output[torch.from_numpy(np.argsort(src_indices)).cuda()]
 
+        return src_output
+
+    def score_(self, src_encoding, trg_encoding):
+        logits = self.score(src_encoding, trg_encoding)
+
+        return F.softmax(logits, dim=1)[:, 1]
+
+        
 
 if __name__ == '__main__':
     train()
