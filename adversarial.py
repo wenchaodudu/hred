@@ -50,7 +50,7 @@ def train(config):
     dev_loader = get_loader('./data/valid.src', './data/valid.tgt', dictionary, 128)
 
     hidden_size = 512
-    sampling_rate = 0.8
+    sampling_rate = 1.0
 
     if config.use_saved:
         hred = torch.load('hred-ad.pt')
@@ -116,7 +116,7 @@ def train(config):
                 ave_d_loss += loss.data[0]
                 optim_D.step()
                 # partial outputs
-                min_length = min(np.min(gumbel_lengths), 10)
+                min_length = min(np.min(gumbel_lengths), 20)
                 for L in range(1, min_length):
                     optim_D.zero_grad()
                     disc_label = np.zeros(trg_seqs.size()[0])
@@ -139,7 +139,7 @@ def train(config):
                 ave_g_loss += loss.data[0]
                 optim_G.step()
                 # partial outputs
-                min_length = min(np.min(gumbel_lengths), 10)
+                min_length = min(np.min(gumbel_lengths), 20)
                 for L in range(1, min_length):
                     loss = disc.loss(ctc_seqs, ctc_lengths, ctc_indices, gumbel_out[:, 0:L], [L]*len(gumbel_lengths),
                                      gumbel_indices, disc_label, None)
