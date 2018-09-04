@@ -2,38 +2,44 @@ import nltk
 import json
 import torch
 import torch.utils.data as data
+import pdb
 
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
-    def __init__(self, src_path, trg_path, word2id):
+    def __init__(self, src_path, trg_path, psn_path, word2id):
         """Reads source and target sequences from txt files."""
         self.src_seqs = open(src_path).readlines()
         self.trg_seqs = open(trg_path).readlines()
+        self.psn_seqs = open(psn_path).readlines()
         self.num_total_seqs = len(self.src_seqs)
-        self.max_len = 50
+        self.max_len = 100
         self.word2id = word2id
         for x in range(self.num_total_seqs):
             if x % 100000 == 0:
                 print(x)
             self.src_seqs[x] = self.preprocess(self.src_seqs[x], self.word2id)
             self.trg_seqs[x] = self.preprocess(self.trg_seqs[x], self.word2id)
+            self.psn_seqs[x] = self.preprocess(self.psn_seqs[x], self.word2id)
 
     def __getitem__(self, index):
         """Returns one data pair (source and target)."""
         src_seq = self.src_seqs[index]
         trg_seq = self.trg_seqs[index]
-        return src_seq, trg_seq
+        psn_seq = self.psn_seqs[index]
+        return src_seq, trg_seq, psn_seq
 
     def __len__(self):
         return self.num_total_seqs
 
     def preprocess(self, sequence, word2id):
         """Converts words to ids."""
-        tokens = sequence.strip().split()[-self.max_len:]
+        tokens = sequence.strip().lower().replace('|', ' ').replace('__eou__', ' ').replace('.', ' .')
+        tokens = tokens.split()[-self.max_len:]
         sequence = []
         sequence.append(word2id['<start>'])
         sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
+        sequence.append(word2id['__eou__'])
         return sequence
 
 
@@ -63,20 +69,33 @@ def collate_fn(data):
             padded_seqs[i, :end] = torch.LongTensor(seq[:end])
         return padded_seqs, lengths
 
+    '''
+    trg_data = list(zip(trg, [*range(len(trg))]))
+    trg_data.sort(key=lambda x: len(x[0]), reverse=True)
+
+    # seperate source and target sequences
+    #src_seqs, trg_seqs = zip(*data)
+    ctc_seqs, ctc_indices = zip(*ctc_data)
+    trg_seqs, trg_indices = zip(*trg_data)
+    '''
+
+    src_seqs, trg_seqs, psn_seqs = zip(*data)
+    data = list(zip(src_seqs, trg_seqs, psn_seqs, [*range(len(data))]))
     # sort a list by sequence length (descending order) to use pack_padded_sequence
     data.sort(key=lambda x: len(x[0]), reverse=True)
 
     # seperate source and target sequences
-    src_seqs, trg_seqs = zip(*data)
+    src_seqs, trg_seqs, psn_seqs, indices = zip(*data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
     trg_seqs, trg_lengths = merge(trg_seqs)
+    psn_seqs, psn_lengths = merge(psn_seqs)
 
-    return src_seqs, src_lengths, trg_seqs, trg_lengths
+    return src_seqs, src_lengths, trg_seqs, trg_lengths, psn_seqs, psn_lengths, indices
 
 
-def get_loader(src_path, trg_path, word2id, batch_size=100):
+def get_loader(src_path, trg_path, psn_path, word2id, batch_size=100, shuffle=True):
     """Returns data loader for custom dataset.
 
     Args:
@@ -90,14 +109,14 @@ def get_loader(src_path, trg_path, word2id, batch_size=100):
         data_loader: data loader for custom dataset.
     """
     # build a custom dataset
-    dataset = Dataset(src_path, trg_path, word2id)
+    dataset = Dataset(src_path, trg_path, psn_path, word2id)
 
     # data loader for custome dataset
     # this will return (src_seqs, src_lengths, trg_seqs, trg_lengths) for each iteration
     # please see collate_fn for details
     data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                               batch_size=batch_size,
-                                              shuffle=True,
+                                              shuffle=shuffle,
                                               collate_fn=collate_fn)
 
     return data_loader
