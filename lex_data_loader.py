@@ -33,7 +33,7 @@ class Dataset(data.Dataset):
         self.rule_mask = [None for x in range(self.num_total_seqs)]
         self.positions = [None for x in range(self.num_total_seqs)]
         self.ancestors = [None for x in range(self.num_total_seqs)]
-        self.max_len = 100
+        self.max_len = 50
         self.word_dict = dictionary['word']
         self.rule_dict = dictionary['rule']
         self.nt_dict = dictionary['const']
@@ -49,10 +49,9 @@ class Dataset(data.Dataset):
             rule_mask = []
             positions = []
             ancestors = []
-            self.load(parse_file[x], trg_seqs, parent_seqs, sibling_seqs, leaf_seqs, rule_seqs, word_mask, rule_mask, {})
-            self.load_positions(parse_file[x], np.cumsum(leaf_seqs), positions)
             tree_dict = {}
-            self.load_dict(parse_file[x], tree_dict)
+            self.load(parse_file[x], trg_seqs, parent_seqs, sibling_seqs, leaf_seqs, rule_seqs, word_mask, rule_mask, tree_dict)
+            self.load_positions(parse_file[x], np.cumsum(leaf_seqs), positions)
             self.load_ancestors(parse_file[x], ancestors, tree_dict)
             self.src_seqs[x] = self.preprocess(self.src_seqs[x], self.word_dict)
             self.psn_seqs[x] = self.preprocess(self.psn_seqs[x], self.word_dict)
@@ -135,7 +134,13 @@ class Dataset(data.Dataset):
             rule_seqs.append(self.rule_dict[rule])
             rule_mask.append(1)
             leaf_seqs.append(0)
-        trg_seqs.append((self.nt_dict[nt], self.word_dict[word], self.nt_dict[tag]))
+        par_rule_ind = 0
+        if tree.parent is not None:
+            _, _, _, par_rule = tree.parent.name.split('__')
+            par_rule = par_rule[:par_rule.find('[')-1]
+            par_rule_ind = self.rule_dict[par_rule]
+        trg_seqs.append((self.nt_dict[nt], self.word_dict[word], self.nt_dict[tag], par_rule_ind))
+        '''
         if tree.parent is not None:
             parent_seqs[0].append(par_dict[tree.parent])
             if tree.parent.parent is not None:
@@ -158,6 +163,19 @@ class Dataset(data.Dataset):
             sibling_seqs[0].append((0, 0, 0))
             parent_seqs[1].append((0, 0, 0))
             sibling_seqs[1].append((0, 0, 0))
+        '''
+        anc = tree.ancestors
+        if len(anc) >= 3:
+            parent_seqs[0].append(par_dict[anc[1]])
+            parent_seqs[1].append(par_dict[anc[2]])
+        elif len(anc) == 2:
+            parent_seqs[0].append(par_dict[anc[1]])
+            parent_seqs[1].append((0, 0, 0))
+        else:
+            parent_seqs[0].append((0, 0, 0))
+            parent_seqs[1].append((0, 0, 0))
+        sibling_seqs[0].append((0, 0, 0))
+        sibling_seqs[1].append((0, 0, 0))
         par_dict[tree] = trg_seqs[-1]
         if tree.parent:
             ind = tree.parent.children.index(tree)
@@ -207,7 +225,8 @@ def collate_fn(data):
         padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
         for i, seq in enumerate(sequences):
             end = lengths[i]
-            padded_seqs[i, :end] = torch.LongTensor(seq[:end])
+            if end:
+                padded_seqs[i, :end] = torch.LongTensor(seq[:end])
         return padded_seqs, lengths
 
     def extract(trg_seqs, x):
@@ -234,6 +253,14 @@ def collate_fn(data):
     rule_seqs, trg_lengths = merge(rule_seqs)
     word_mask, trg_lengths = merge(word_mask, trg_lengths)
     rule_mask, trg_lengths = merge(rule_mask, trg_lengths)
+    ancestors = [anc for lst in ancestors for anc in lst]
+    anc_lex = [[x[1] for x in anc] for anc in ancestors]
+    anc_nt = [[x[0] for x in anc] for anc in ancestors]
+    anc_rule = [[x[3] for x in anc] for anc in ancestors]
+    anc_lex, anc_lengths = merge(anc_lex)
+    anc_nt, anc_lengths = merge(anc_nt, anc_lengths)
+    anc_rule, anc_lengths = merge(anc_rule, anc_lengths)
+    ancestors = (anc_lex, anc_nt, anc_rule)
     _trg_seqs = [None, None, None]
     parent_seqs = [[None, None, None], [None, None, None]]
     leaves_seqs = [[None, None, None], [None, None, None], [None, None, None]]
@@ -266,7 +293,7 @@ def collate_fn(data):
            parent_seqs, sibling_seqs, leaves_seqs, lexes_seqs, rule_seqs, \
            leaf_indices, lex_indices, \
            word_mask, rule_mask, \
-           pos, ancestors
+           pos, ancestors, anc_lengths
 
 
 def get_loader(src_path, parse_path, psn_path, word2id, batch_size=100, shuffle=True):
