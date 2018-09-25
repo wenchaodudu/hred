@@ -753,6 +753,31 @@ class AttnDecoder(nn.Module):
         return src_hidden
         '''
 
+    def attention(self, decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length):
+        a_key = F.tanh(self.a_key(decoder_hidden[0].squeeze(0)))
+        p_key = F.tanh(self.p_key(torch.cat((decoder_hidden[0].squeeze(0), src_last_hidden[0].squeeze(0)), dim=1)))
+
+        q_key = F.tanh(self.q_key(src_hidden))
+        psn_key = F.tanh(self.psn_key(psn_hidden))
+        q_value = F.tanh(self.q_value(src_hidden))
+        psn_value = F.tanh(self.psn_value(psn_hidden))
+        q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
+        psn_energy = torch.bmm(psn_key, p_key.unsqueeze(2)).squeeze(2)
+        q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
+        psn_mask  = torch.arange(p_length).long().cuda().repeat(psn_hidden.size(0), 1) < psn_lengths.cuda().repeat(p_length, 1).transpose(0, 1)
+        q_energy[~q_mask] = -np.inf
+        psn_energy[~psn_mask] = -np.inf
+        '''
+        q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
+        psn_weights = F.softmax(psn_energy, dim=1).unsqueeze(1)
+        '''
+        q_weights = F.sigmoid(q_energy).unsqueeze(1)
+        psn_weights = F.sigmoid(psn_energy).unsqueeze(1)
+        q_context = torch.bmm(q_weights, q_value)
+        psn_context = torch.bmm(psn_weights, psn_value)
+
+        return q_context, psn_context
+
     def forward(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, sampling_rate):
         batch_size = src_seqs.size(0)
 
@@ -779,26 +804,8 @@ class AttnDecoder(nn.Module):
         decoder_input = ans_embed[:, 0, :].unsqueeze(1)
         decoder_outputs = Variable(torch.FloatTensor(batch_size, trg_l - 1, self.vocab_size).cuda())
         for step in range(trg_l - 1):
-            a_key = F.tanh(self.a_key(decoder_hidden[0].squeeze(0)))
-            p_key = F.tanh(self.p_key(torch.cat((decoder_hidden[0].squeeze(0), src_last_hidden[0].squeeze(0)), dim=1)))
-
-            q_key = F.tanh(self.q_key(src_hidden))
-            psn_key = F.tanh(self.psn_key(psn_hidden))
-            q_value = F.tanh(self.q_value(src_hidden))
-            psn_value = F.tanh(self.psn_value(psn_hidden))
-            q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-            psn_energy = torch.bmm(psn_key, p_key.unsqueeze(2)).squeeze(2)
-            q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
-            psn_mask  = torch.arange(p_length).long().cuda().repeat(psn_hidden.size(0), 1) < psn_lengths.cuda().repeat(p_length, 1).transpose(0, 1)
-            q_energy[~q_mask] = -np.inf
-            psn_energy[~psn_mask] = -np.inf
-            q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
-            psn_weights = F.softmax(psn_energy, dim=1).unsqueeze(1)
-            q_context = torch.bmm(q_weights, q_value).squeeze(1)
-            psn_context = torch.bmm(psn_weights, psn_value)
-
             #context = torch.cat((q_context, i_context), dim=1)
-            context = q_context.unsqueeze(1)
+            context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
             decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, context, psn_context), dim=2), decoder_hidden)
             decoder_outputs[:, step, :] = self.word_dist(self.out(decoder_output.squeeze(1)))
             #decoder_outputs[:, step, :] = decoder_output.squeeze(1)
@@ -810,7 +817,7 @@ class AttnDecoder(nn.Module):
 
         return decoder_outputs
 
-    def generate(self, src_seqs, src_lengths, psn_seqs, psn_lengths, indices, max_len, beam_size, top_k):
+    def generate(self, src_seqs, src_lengths, psn_seqs, psn_lengths, indices, max_len, beam_size, top_k, slots=None):
         src_embed = self.embed(Variable(src_seqs).cuda())
         packed_input = pack_padded_sequence(src_embed, np.asarray(src_lengths), batch_first=True)
         src_output, src_last_hidden = self.encoder(packed_input)
@@ -835,119 +842,144 @@ class AttnDecoder(nn.Module):
         length = src_hidden.size(1)
         p_length = psn_hidden.size(1)
 
-        '''
-        a_key = F.tanh(self.a_key(decoder_hidden[0].squeeze(0)))
-
-        q_key = F.tanh(self.q_key(src_hidden))
-        q_value = F.tanh(self.q_value(src_hidden))
-        q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-        q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
-        q_energy[~q_mask] = -np.inf
-        q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
-        q_context = torch.bmm(q_weights, q_value).squeeze(1)
-
-        #context = torch.cat((q_context, i_context), dim=1)
-        context = q_context.unsqueeze(1)
-        '''
-        a_key = F.tanh(self.a_key(decoder_hidden[0].squeeze(0)))
-        p_key = F.tanh(self.p_key(torch.cat((decoder_hidden[0].squeeze(0), src_last_hidden[0].squeeze(0)), dim=1)))
-
-        q_key = F.tanh(self.q_key(src_hidden))
-        psn_key = F.tanh(self.psn_key(psn_hidden))
-        q_value = F.tanh(self.q_value(src_hidden))
-        psn_value = F.tanh(self.psn_value(psn_hidden))
-        q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-        psn_energy = torch.bmm(psn_key, p_key.unsqueeze(2)).squeeze(2)
-        q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
-        psn_mask  = torch.arange(p_length).long().cuda().repeat(psn_hidden.size(0), 1) < psn_lengths.cuda().repeat(p_length, 1).transpose(0, 1)
-        q_energy[~q_mask] = -np.inf
-        psn_energy[~psn_mask] = -np.inf
-        q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
-        psn_weights = F.softmax(psn_energy, dim=1).unsqueeze(1)
-        q_context = torch.bmm(q_weights, q_value)
-        psn_context = torch.bmm(psn_weights, psn_value)
-
+        q_context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
         decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context, psn_context), dim=2), decoder_hidden)
         decoder_output = self.word_dist(self.out(decoder_output.squeeze(1)))
         decoder_output[:, 0] = -np.inf
-        logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), beam_size, dim=1)
-        #decoder_input = self.embedding(argtop[0])
-        beam = Variable(torch.zeros(_batch_size, beam_size, max_len)).long().cuda()
-        beam[:, :, 0] = argtop
-        #beam_probs = logprobs[0].clone()
-        beam_probs = logprobs.clone()
-        #beam_eos = (argtop == self.eou)[0].data
-        beam_eos = (argtop == self.eou).data
-        #hidden = (decoder_hidden[0].clone(), decoder_hidden[1].clone())
-        decoder_hidden = (decoder_hidden[0].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1),
-                          decoder_hidden[1].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1))
-        src_last_hidden = (src_last_hidden[0].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1),
-                           src_last_hidden[1].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1))
-        decoder_input = self.embed(argtop.view(-1)).unsqueeze(1)
-        src_hidden = src_hidden.expand(beam_size, length, self.hidden_size)
-        psn_hidden = psn_hidden.expand(beam_size, p_length, self.hidden_size)
+
+        if slots:
+            slots = torch.cuda.LongTensor(slots)
+            states_num = 2 ** len(slots)
+            slots_num = slots.size(0)
+            logits = F.log_softmax(decoder_output.squeeze(1), dim=1)
+            slots_logprobs = logits[:, slots]
+            logits[:, slots] = -np.inf
+            logprobs, argtop = torch.topk(logits, beam_size, dim=1)
+            argtop = Variable(torch.cat((argtop.data, slots.expand(_batch_size, slots_num)), dim=1)).squeeze(0)
+            logprobs = Variable(torch.cat((logprobs.data, slots_logprobs.data), dim=1)).squeeze(0)
+            state_codes = np.zeros(beam_size + slots_num, dtype=np.int32)
+            logprobs, perm_idx = logprobs.sort(descending=True)
+            argtop = argtop[perm_idx]
+            state_codes = state_codes[perm_idx.cpu().data.numpy()]
+            for x in range(slots_num):
+                state_codes[beam_size+x] = 2 ** x 
+            beam = Variable(torch.zeros(states_num, beam_size, max_len)).long().cuda()
+            beam_probs = torch.zeros(states_num, beam_size).cuda().fill_(-np.inf)
+            beam_eos = torch.zeros(states_num, beam_size).byte().cuda()
+            for x in range(states_num):
+                if (state_codes == x).any():
+                    state_going = torch.from_numpy(np.where(state_codes == x)[0]).cuda()
+                    state_going_num = min(beam_size, state_going.shape[0])
+                    beam[x, :state_going_num, 0] = argtop[state_going[:state_going_num]]
+                    beam_probs[x, :state_going_num] = logprobs[state_going[:state_going_num]].data
+                    beam_eos[x, :state_going_num] = (argtop[state_going[:state_going_num]] == self.eou).data
+
+            decoder_hidden = (decoder_hidden[0].unsqueeze(2).expand(1, states_num, beam_size, self.hidden_size).contiguous().view(1, states_num * beam_size, -1), 
+                              decoder_hidden[1].unsqueeze(2).expand(1, states_num, beam_size, self.hidden_size).contiguous().view(1, states_num * beam_size, -1)) 
+            src_last_hidden = (src_last_hidden[0].unsqueeze(2).expand(1, states_num, beam_size, self.hidden_size).contiguous().view(1, states_num * beam_size, -1), 
+                               src_last_hidden[1].unsqueeze(2).expand(1, states_num, beam_size, self.hidden_size).contiguous().view(1, states_num * beam_size, -1)) 
+            decoder_input = self.embed(beam[:, :, 0].contiguous().view(-1)).unsqueeze(1)
+            src_hidden = src_hidden.expand(states_num * beam_size, length, self.hidden_size)
+            psn_hidden = psn_hidden.expand(states_num * beam_size, p_length, self.hidden_size)
+            state_codes = np.zeros(beam_size * states_num, dtype=np.int32)
+            trans_state_codes = np.zeros(top_k + slots_num, dtype=np.int32)
+            for x in range(slots_num):
+                trans_state_codes[top_k+x] = 2 ** x
+            for x in range(states_num):
+                state_codes[x*beam_size:(x+1)*beam_size] = x
+        else:
+            logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), beam_size, dim=1)
+            #decoder_input = self.embedding(argtop[0])
+            beam = Variable(torch.zeros(_batch_size, beam_size, max_len)).long().cuda()
+            beam[:, :, 0] = argtop
+            #beam_probs = logprobs[0].clone()
+            beam_probs = logprobs.clone()
+            #beam_eos = (argtop == self.eou)[0].data
+            beam_eos = (argtop == self.eou).data
+            #hidden = (decoder_hidden[0].clone(), decoder_hidden[1].clone())
+            decoder_hidden = (decoder_hidden[0].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1),
+                              decoder_hidden[1].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1))
+            src_last_hidden = (src_last_hidden[0].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1),
+                               src_last_hidden[1].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1))
+            decoder_input = self.embed(argtop.view(-1)).unsqueeze(1)
+            src_hidden = src_hidden.expand(beam_size, length, self.hidden_size)
+            psn_hidden = psn_hidden.expand(beam_size, p_length, self.hidden_size)
+
         for t in range(max_len-1):
-            '''
-            a_key = F.tanh(self.a_key(hidden[0].squeeze(0)))
-
-            q_key = F.tanh(self.q_key(src_hidden))
-            q_value = self.q_value(src_hidden)
-            q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-            q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
-            q_energy[~q_mask] = -np.inf
-            q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
-            q_context = torch.bmm(q_weights, q_value).squeeze(1)
-            '''
-            a_key = F.tanh(self.a_key(decoder_hidden[0].squeeze(0)))
-            p_key = F.tanh(self.p_key(torch.cat((decoder_hidden[0].squeeze(0), src_last_hidden[0].squeeze(0)), dim=1)))
-
-            q_key = F.tanh(self.q_key(src_hidden))
-            psn_key = F.tanh(self.psn_key(psn_hidden))
-            q_value = F.tanh(self.q_value(src_hidden))
-            psn_value = F.tanh(self.psn_value(psn_hidden))
-            q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-            psn_energy = torch.bmm(psn_key, p_key.unsqueeze(2)).squeeze(2)
-            q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
-            psn_mask  = torch.arange(p_length).long().cuda().repeat(psn_hidden.size(0), 1) < psn_lengths.cuda().repeat(p_length, 1).transpose(0, 1)
-            q_energy[~q_mask] = -np.inf
-            psn_energy[~psn_mask] = -np.inf
-            q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
-            psn_weights = F.softmax(psn_energy, dim=1).unsqueeze(1)
-            q_context = torch.bmm(q_weights, q_value)
-            psn_context = torch.bmm(psn_weights, psn_value)
-
-            '''
-            context = q_context.unsqueeze(1).expand(_batch_size, beam_size, self.input_size).contiguous().view(_batch_size * beam_size, 1, -1)
-            p_context = psn_context.expand(_batch_size, beam_size, self.input_size).contiguous().view(_batch_size * beam_size, 1, -1)
-            '''
+            if slots is not None:
+                new_beam = beam.clone()
+                new_beam_probs = beam_probs.clone()
+                new_beam_eos = beam_eos.clone()
+            q_context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
             decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context, psn_context), dim=2), decoder_hidden)
             decoder_output = self.word_dist(self.out(decoder_output.squeeze(1)))
 
-            logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
-            #best_probs, best_args = (beam_probs.repeat(top_k, 1).transpose(0, 1) + logprobs).view(-1).topk(beam_size)
-            best_probs, best_args = (beam_probs.view(-1).unsqueeze(1).expand(_batch_size * beam_size, top_k) + logprobs).view(_batch_size, beam_size, -1).view(_batch_size, -1).topk(beam_size)
-            decoder_hidden = (decoder_hidden[0].view(1, _batch_size, beam_size, -1),
-                              decoder_hidden[1].view(1, _batch_size, beam_size, -1))
-            for x in range(_batch_size):
-                last = (best_args / top_k)[x]
-                curr = (best_args % top_k)[x]
-                beam[x, :, :] = beam[x][last, :]
-                beam_eos[x, :] = beam_eos[x][last.data]
-                beam_probs[x, :] = beam_probs[x][last.data]
-                beam[x, :, t+1] = argtop.view(_batch_size, beam_size, top_k)[x][last.data, curr.data] * Variable(~beam_eos[x]).long() + eos_filler * Variable(beam_eos[x]).long()
-                mask = torch.cuda.ByteTensor(_batch_size, beam_size).fill_(0)
-                mask[x] = ~beam_eos[x]
-                beam_probs[mask] = (beam_probs[mask] * (t+1) + best_probs[mask]) / (t+2)
-                decoder_hidden[0][:, x, :, :] = decoder_hidden[0][:, x, :, :][:, last, :]
-                decoder_hidden[1][:, x, :, :] = decoder_hidden[1][:, x, :, :][:, last, :]
-            beam_eos = beam_eos | (beam[:, :, t+1] == self.eou).data
-            decoder_hidden = (decoder_hidden[0].view(1, _batch_size * beam_size, -1),
-                              decoder_hidden[1].view(1, _batch_size * beam_size, -1))
-            decoder_input = self.embed(beam[:, :, t+1].contiguous().view(-1)).unsqueeze(1)
+            if slots is not None:
+                logits = F.log_softmax(decoder_output, dim=1)
+                slots_logprobs = logits[:, slots]
+                logits[:, slots] = -np.inf
+                logprobs, argtop = torch.topk(logits, top_k, dim=1)
+                argtop = Variable(torch.cat((argtop.data, slots.expand(states_num * beam_size, slots_num)), dim=1)).squeeze(0)
+                logprobs = Variable(torch.cat((logprobs.data, slots_logprobs.data), dim=1)).squeeze(0)
+                curr_logprobs = (beam_probs.view(-1).unsqueeze(1).expand(states_num * beam_size, top_k + slots_num) + logprobs.data).view(-1)
+                transition = np.bitwise_or(np.repeat(state_codes, top_k + slots_num), np.tile(trans_state_codes, states_num * beam_size))
+                transition = transition.reshape(states_num, beam_size, top_k + slots_num)
+                x_ind, y_ind = np.where(beam_eos == True)
+                transition[x_ind, y_ind, :] = x_ind[:, np.newaxis]
+                transition = torch.cuda.LongTensor(transition).view(-1)
+                new_decoder_hidden = (decoder_hidden[0].data.clone(), decoder_hidden[1].data.clone())
+                for x in range(states_num):
+                    if (transition == x).any():
+                        _logprobs = curr_logprobs.clone()
+                        _logprobs[transition != x] = -np.inf
+                        best_probs, best_args = _logprobs.topk(beam_size)
+                        last = (best_args / (top_k + slots_num))
+                        curr = (best_args % (top_k + slots_num))
+                        new_beam[x, :, :] = beam.view(-1, max_len)[last, :]
+                        new_beam_eos[x, :] = beam_eos.view(-1)[last]
+                        new_beam_probs[x, :] = beam_probs.view(-1)[last]
+                        new_beam[x, :, t+1] = argtop[last, curr] * Variable(~new_beam_eos[x]).long() + eos_filler * Variable(new_beam_eos[x]).long()
+                        mask = torch.cuda.ByteTensor(states_num, beam_size).fill_(0)
+                        mask[x] = ~new_beam_eos[x]
+                        new_beam_probs[mask] = (new_beam_probs[mask] * (t+1) + best_probs[~new_beam_eos[x]]) / (t+2)
+                        new_decoder_hidden[0][:, x*beam_size:(x+1)*beam_size, :] = decoder_hidden[0][:, last, :].data
+                        new_decoder_hidden[1][:, x*beam_size:(x+1)*beam_size, :] = decoder_hidden[1][:, last, :].data
+                decoder_hidden = (Variable(new_decoder_hidden[0]),
+                                  Variable(new_decoder_hidden[1]))
+                beam_eos = new_beam_eos | (new_beam[:, :, t+1] == self.eou).data
+                beam = new_beam
+                beam_probs = new_beam_probs
+                decoder_input = self.embed(beam[:, :, t+1].contiguous().view(-1)).unsqueeze(1)
+            else:
+                logprobs, argtop = torch.topk(F.log_softmax(decoder_output, dim=1), top_k, dim=1)
+                #best_probs, best_args = (beam_probs.repeat(top_k, 1).transpose(0, 1) + logprobs).view(-1).topk(beam_size)
+                best_probs, best_args = (beam_probs.view(-1).unsqueeze(1).expand(_batch_size * beam_size, top_k) + logprobs).view(_batch_size, beam_size, -1).view(_batch_size, -1).topk(beam_size)
+                decoder_hidden = (decoder_hidden[0].view(1, _batch_size, beam_size, -1),
+                                  decoder_hidden[1].view(1, _batch_size, beam_size, -1))
+                for x in range(_batch_size):
+                    last = (best_args / top_k)[x]
+                    curr = (best_args % top_k)[x]
+                    beam[x, :, :] = beam[x][last, :]
+                    beam_eos[x, :] = beam_eos[x][last.data]
+                    beam_probs[x, :] = beam_probs[x][last.data]
+                    beam[x, :, t+1] = argtop.view(_batch_size, beam_size, top_k)[x][last.data, curr.data] * Variable(~beam_eos[x]).long() + eos_filler * Variable(beam_eos[x]).long()
+                    mask = torch.cuda.ByteTensor(_batch_size, beam_size).fill_(0)
+                    mask[x] = ~beam_eos[x]
+                    beam_probs[mask] = (beam_probs[mask] * (t+1) + best_probs[mask]) / (t+2)
+                    decoder_hidden[0][:, x, :, :] = decoder_hidden[0][:, x, :, :][:, last, :]
+                    decoder_hidden[1][:, x, :, :] = decoder_hidden[1][:, x, :, :][:, last, :]
+                beam_eos = beam_eos | (beam[:, :, t+1] == self.eou).data
+                decoder_hidden = (decoder_hidden[0].view(1, _batch_size * beam_size, -1),
+                                  decoder_hidden[1].view(1, _batch_size * beam_size, -1))
+                decoder_input = self.embed(beam[:, :, t+1].contiguous().view(-1)).unsqueeze(1)
             if beam_eos.all():
                 break
-        best, best_arg = beam_probs.max(1)
-        generations = beam[torch.arange(_batch_size).long().cuda(), best_arg.data].data.cpu()
+        if slots is not None:
+            best, best_arg = beam_probs[-1].max(0)
+            generations = beam[-1][best_arg].data.cpu()
+        else:
+            best, best_arg = beam_probs.max(1)
+            generations = beam[torch.arange(_batch_size).long().cuda(), best_arg.data].data.cpu()
         return generations, best
 
     def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, sampling_rate):
