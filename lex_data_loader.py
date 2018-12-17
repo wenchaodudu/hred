@@ -121,11 +121,11 @@ class Dataset(data.Dataset):
             d = tree_dict[a]
             new_nt = d[0]
             # use constituent of current node
-            d = (nt, d[1], d[2], d[3])
-            if a.parent is None or a.parent.children.index(a) < len(a.parent.children) - 1:
+            d = (nt, d[1], d[2], d[3], d[4])
+            if a.parent is None or a.parent.children.index(a) != d[4]:
                 anc_ind.append(d)
             else:
-                dd = (d[0], -1, d[2], d[3])
+                dd = (d[0], -1, d[2], d[3], d[4])
                 anc_ind.append(dd)
             nt = new_nt
         ancestors.append(list(reversed(anc_ind)))
@@ -162,6 +162,7 @@ class Dataset(data.Dataset):
             rule_ind = 0
             if tree.is_leaf:
                 nt, word, tag, rule = tree.name.split('__')
+                inh = literal_eval(rule[rule.find('['):rule.find(']')+1])[0]
                 #rule_seqs.append(self.rule_dict['RULE: EOD'])
                 rule_mask.append(1)
                 leaf_seqs.append(1)
@@ -177,7 +178,7 @@ class Dataset(data.Dataset):
                 rule_mask.append(1)
                 leaf_seqs.append(0)
             
-            trg_seqs.append((self.nt_dict[nt], self.word_dict[word], self.nt_dict[nt], rule_ind))
+            trg_seqs.append((self.nt_dict[nt], self.word_dict[word], self.nt_dict[nt], rule_ind, inh))
             if tree.parent is None:
                 rule_seqs.append(0)
                 par_lex = 0

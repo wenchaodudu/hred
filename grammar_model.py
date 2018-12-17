@@ -3263,7 +3263,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
             self.lex_hidden_out_0 = nn.Linear(hidden_size + context_size * 1, lex_input_size)
             self.lex_hidden_out_1 = nn.Linear(hidden_size + context_size * 1, lex_input_size)
             self.lex_hidden_out_2 = nn.Linear(hidden_size + context_size * 1, lex_input_size)
-            self.rule_hidden_out = nn.Linear(hidden_size * 1, rule_input_size)
+            self.rule_hidden_out = nn.Linear(hidden_size * 2, rule_input_size)
             self.nt_hidden_out = nn.Linear(hidden_size + context_size, nt_input_size)
         else:
             self.lex_hidden_out = nn.Linear(hidden_size * 1 + context_size * 1, lex_input_size)
@@ -3899,7 +3899,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 rules = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_outputs[:, :, :self.hidden_size*2])))
             else:
                 #rules = self.rule_dist(F.tanh(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size*1], F.tanh(self.merge_out(decoder_outputs[:, :, self.hidden_size:self.hidden_size*3]))), dim=2))))
-                rules = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_outputs[:, :, :self.hidden_size*1])))
+                rules = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_outputs[:, :, :self.hidden_size*2])))
         else:
             #rules = self.rule_dist(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, self.hidden_size*3:self.hidden_size*4], decoder_outputs[:, :, :self.hidden_size*2], decoder_outputs[:, :, -self.context_size:]), dim=2)))
             rules = self.rule_dist(F.tanh(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size*2], decoder_outputs[:, :, -self.context_size:]), dim=2))))
@@ -4023,7 +4023,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
             word_embed = word_embed.expand(self.lex_cand_num, self.lex_input_size)
             decoder_output = decoder_output.squeeze(0).expand(self.lex_cand_num, self.decoder_output_size)
             if self.data in ['persona', 'movie']:
-                rule_logits = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_output[:, :self.hidden_size * 1])))
+                rule_logits = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_output[:, :self.hidden_size * 2])))
                 #rule_logits = self.rule_dist(F.tanh(self.rule_hidden_out(torch.cat((decoder_output[:, :self.hidden_size*1], F.tanh(self.merge_out(decoder_output[:, self.hidden_size:self.hidden_size*3]))), dim=1))))
             else:
                 #rule_logits = self.rule_dist(self.rule_hidden_out(torch.cat((decoder_output[:, self.hidden_size*3:self.hidden_size*4], decoder_output[:, :self.hidden_size*2], decoder_output[:, -self.context_size:]), dim=1)))
@@ -4348,7 +4348,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 word_embed = self.lexicon(word_argtop).squeeze(0)
                 word_embed = word_embed.expand(beam_size, self.lex_cand_num, self.lex_input_size)
                 if self.data in ['persona', 'movie']:
-                    rule_logits = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_output[:, :, :self.hidden_size * 1])))
+                    rule_logits = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_output[:, :, :self.hidden_size * 2])))
                     #rule_logits = self.rule_dist(F.tanh(self.rule_hidden_out(torch.cat((decoder_output[:, :, :self.hidden_size*1], F.tanh(self.merge_out(decoder_output[:, :, self.hidden_size:self.hidden_size*3]))), dim=2))))
                 else:
                     #rule_logits = self.rule_dist(self.rule_hidden_out(torch.cat((decoder_output[:, :, self.hidden_size*3:self.hidden_size*4], decoder_output[:, :, :self.hidden_size*2], decoder_output[:, :, -self.context_size:]), dim=2)))
@@ -4635,7 +4635,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                             rule = rule.replace('_ROOT', '')
                             assert rule.find('[') == -1
                             inh = len(rule.split()) - rule.split()[::-1].index(curr_nt[x]) - 1
-                            current[x] = Node('{}__{}__{} [{}]'.format(curr_nt[x], word, rule, rule.split().index(curr_nt[x])), parent=current[x])
+                            current[x] = Node('{}__{}__{} [{}]'.format(curr_nt[x], word, rule, inh), parent=current[x])
                         current[x].id = node_ind
                         node_ind += 1
                         next_nt.append(self.nt_dictionary[rule.split()[len(current[x].children)]])
