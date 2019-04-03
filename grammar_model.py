@@ -3178,13 +3178,13 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         self.nt_vocab_size = nt_vocab_size
         self.rule_vocab_size = rule_vocab_size
         self.lex_level = lex_level
-        self.lexicon = Embedding(lex_vocab_size, lex_input_size, lex_vectors, trainable=True)
-        self.constituent = Embedding(nt_vocab_size, nt_input_size, nt_vectors, trainable=True)
-        self.rule = Embedding(rule_vocab_size, rule_input_size, rule_vectors, trainable=True)
+        self.lexicon = nn.Embedding(lex_vocab_size, lex_input_size, padding_idx=0)
+        self.constituent = nn.Embedding(nt_vocab_size, nt_input_size, padding_idx=0)
+        self.rule = nn.Embedding(rule_vocab_size, rule_input_size, padding_idx=0)
         self.depth_embed_size = 300
-        self.depth = Embedding(10, self.depth_embed_size, trainable=True)
-        self.eod = Embedding(1, 300, trainable=True)
-        self.breadth = Embedding(40, 256, trainable=True)
+        self.depth = nn.Embedding(10, self.depth_embed_size, padding_idx=0)
+        self.eod = nn.Embedding(1, 300)
+        self.breadth = nn.Embedding(40, 256)
         self.pos_embed_size = 0
         self.encoder = nn.LSTM(lex_input_size, hidden_size)
         self.lm_encoder = nn.LSTM(lex_input_size, hidden_size)
@@ -3263,7 +3263,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
             self.lex_hidden_out_0 = nn.Linear(hidden_size + context_size * 1, lex_input_size)
             self.lex_hidden_out_1 = nn.Linear(hidden_size + context_size * 1, lex_input_size)
             self.lex_hidden_out_2 = nn.Linear(hidden_size + context_size * 1, lex_input_size)
-            self.rule_hidden_out = nn.Linear(hidden_size * 2, rule_input_size)
+            self.rule_hidden_out = nn.Linear(hidden_size * 1, rule_input_size)
             self.nt_hidden_out = nn.Linear(hidden_size + context_size, nt_input_size)
         else:
             self.lex_hidden_out = nn.Linear(hidden_size * 1 + context_size * 1, lex_input_size)
@@ -3379,14 +3379,14 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         for k, v in rules_by_nt.items():
             if k[-5:] != '_ROOT':
                 vv = torch.cuda.ByteTensor(self.rule_vocab_size).fill_(False)
-                vv[v] = True
+                vv[v] = 1
                 self.rules_by_nt[self.nt_dictionary[k]] = vv
 
         if self.lex_level > 0:
             self.root_rules = torch.cuda.ByteTensor(self.rule_vocab_size).fill_(False)
             for k, v in self.rule_dictionary.items():
                 if k[-5:] == '_ROOT':
-                    self.root_rules[v] = True
+                    self.root_rules[v] = 1
 
     def init_bin_rules(self, id2word):
         self.ROOT = self.nt_dictionary['NT']
@@ -3453,7 +3453,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
             '''
             contains = [nt for nt in range(1, self.nt_vocab_size) if self.nt_by_id[nt] in self.rules_by_id[x].split() and self.rules_by_id[x][-5:] != '_ROOT']
             if contains:
-                self.nt_rule[contains, [x]] = True
+                self.nt_rule[contains, [x]] = 1
 
         #if self.lex_level == 3:
         if False:
@@ -3477,7 +3477,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                         nt = self.nt_by_id[y]
                         rule = 'RULE: {}_ROOT'.format(nt)
                         if rule in self.rule_dictionary:
-                            self.root_nt_word[self.rule_dictionary[rule], x] = True
+                            self.root_nt_word[self.rule_dictionary[rule], x] = 1
             self.word_word = (torch.from_numpy(word_word) > 0).cuda()
 
     def init_forget_bias(self, rnn, b):
@@ -3660,7 +3660,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
     def forward(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, rule_seqs, lex_seqs, leaf_indices, lex_indices, positions, ancestors, anc_lengths):
         batch_size = src_seqs.size(0)
 
-        src_embed = self.lexicon(Variable(src_seqs).cuda())
+        src_embed = self.lexicon(src_seqs.cuda())
         packed_input = pack_padded_sequence(src_embed, np.asarray(src_lengths), batch_first=True)
         src_output, src_last_hidden = self.encoder(packed_input)
         src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
@@ -3705,7 +3705,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         lex_decoder_hidden = torch.cat((lex_init_hidden[0].transpose(0, 1), lex_decoder_hidden), dim=1)
         '''
 
-        ans_nt = self.constituent(Variable(trg_seqs[0]).cuda())
+        ans_nt = self.constituent(trg_seqs[0].cuda())
 
         '''
         ans_rule_embed = rule_seqs.clone()
@@ -3713,26 +3713,26 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         ans_rule_embed[:, 0] = 0
         ans_rule_embed = self.rule(Variable(ans_rule_embed).cuda())
         '''
-        ans_rule_embed = self.rule(Variable(rule_seqs).cuda())
+        ans_rule_embed = self.rule(rule_seqs.cuda())
 
         anc_lex = torch.cat((torch.LongTensor([self.start for x in range(ancestors[0].size(0))]).unsqueeze(1), ancestors[0]), dim=1)
         anc_lengths = [l + 1 for l in anc_lengths]
-        anc_embed = self.lexicon(Variable(anc_lex).cuda())
+        anc_embed = self.lexicon(anc_lex.cuda())
         anc_hidden, anc_init_hidden = self.encode_anc(anc_embed, anc_lengths, trg_lengths, batch_size, src_last_hidden, 'anc_')
 
-        anc_syn_embed = torch.cat((self.constituent(Variable(ancestors[1]).cuda()), self.rule(Variable(ancestors[2]).cuda())), dim=2)
+        anc_syn_embed = torch.cat((self.constituent(ancestors[1].cuda()), self.rule(ancestors[2].cuda())), dim=2)
         #anc_syn_hidden, anc_syn_init_hidden = self.encode_anc(anc_syn_embed, anc_lengths, trg_lengths, batch_size, src_last_hidden, 'anc_syn_')
 
         depth = positions[0] + 1
         depth[depth > 9] = 9
-        depth_embed = self.depth(Variable(depth).cuda())
+        depth_embed = self.depth(depth.cuda())
         ans_embed = torch.cat((self.drop(ans_nt), self.drop(ans_rule_embed), self.drop(depth_embed)), dim=2)
         
         trg_l = max(trg_lengths)
         leaf_l = max(psn_lengths)
         batch_ind = torch.arange(batch_size).long().cuda()
-        decoder_outputs = Variable(torch.FloatTensor(batch_size, trg_l, self.decoder_output_size).cuda())
-        lm_decoder_outputs = Variable(torch.FloatTensor(batch_size, leaf_l, self.hidden_size + self.context_size * 1).cuda())
+        decoder_outputs = torch.FloatTensor(batch_size, trg_l, self.decoder_output_size).cuda()
+        lm_decoder_outputs = torch.FloatTensor(batch_size, leaf_l, self.hidden_size + self.context_size * 1).cuda()
         if self.lex_level == 0:
             context = self.attention((leaf_init_hidden[0], None), src_hidden, src_hidden.size(1), src_lengths, src_last_hidden, 'leaf_')
         else:
@@ -3747,7 +3747,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 #context = torch.cat((leaf_context, anc_context), dim=2)
                 context = self.drop(self.attention((torch.cat((leaf_init_hidden[0], anc_init_hidden[0]), dim=2), None), src_hidden, src_hidden.size(1), src_lengths, src_last_hidden, 'leaf_'))
             else:
-                lm_decoder_outputs = Variable(torch.FloatTensor(batch_size, lm_decoder_hidden.size(1), self.hidden_size + self.context_size * 1).cuda())
+                lm_decoder_outputs = torch.FloatTensor(batch_size, lm_decoder_hidden.size(1), self.hidden_size + self.context_size * 1).cuda()
                 context = self.attention2((torch.cat((leaf_init_hidden[0], anc_init_hidden[0]), dim=2), None), src_hidden, src_hidden.size(1), src_lengths, src_last_hidden, 'lex') 
                 #syn_context = self.attention2((torch.cat((decoder_hidden[0], anc_syn_init_hidden[0]), dim=2), None), psn_hidden, psn_hidden.size(1), psn_lengths, psn_last_hidden, 'syn')
                 syn_context = self.attention2((decoder_hidden[0], None), psn_hidden, psn_hidden.size(1), psn_lengths.tolist(), psn_last_hidden, 'syn')
@@ -3764,13 +3764,13 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 lm_context = self.attention2((lm_decoder_hidden[:, [step], :].transpose(0, 1), None), src_hidden, src_hidden.size(1), src_lengths, src_last_hidden, 'lex') 
         '''
         if self.lex_level > 0:
-            lm_decoder_input = self.lexicon(Variable(torch.cuda.LongTensor(batch_size).fill_(self.start))).unsqueeze(1)
+            lm_decoder_input = self.lexicon(torch.cuda.LongTensor(batch_size).fill_(self.start)).unsqueeze(1)
             for step in range(leaf_l):
                 lm_context = self.attention(lm_decoder_hidden, src_hidden, src_hidden.size(1), src_lengths, src_last_hidden, 'lm_') 
                 lm_decoder_output, lm_decoder_hidden = self.lm_decoder(lm_decoder_input, lm_decoder_hidden)
                 lm_decoder_outputs[:, step, :self.hidden_size] = lm_decoder_output.squeeze(1)
                 lm_decoder_outputs[:, step, -self.context_size*1:] = lm_context.squeeze(1)
-                lm_decoder_input = self.lexicon(Variable(psn_seqs[:, step].cuda())).unsqueeze(1)
+                lm_decoder_input = self.lexicon(psn_seqs[:, step].cuda()).unsqueeze(1)
             
         for step in range(trg_l):
             #decoder_input = torch.cat((ans_embed[:, step, :].unsqueeze(1), tree_input[:, step, :].unsqueeze(1)), dim=2)
@@ -3859,7 +3859,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         decoder_outputs, lm_decoder_hidden = self.forward(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, rule_seqs, lex_seqs, leaf_indices, lex_indices, positions, ancestors, anc_lengths)
         batch_size, trg_len = trg_seqs[0].size(0), trg_seqs[0].size(1)
 
-        tags = self.constituent(Variable(trg_seqs[2]).cuda())
+        tags = self.constituent(trg_seqs[2].cuda())
         #words = self.lex_dist(self.lex_out(F.tanh(self.lex_hidden_out(decoder_outputs))))
         if self.data in ['persona', 'movie']:
             if self.lex_level == 0:
@@ -3883,12 +3883,12 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
             ind = leaf_indices[x].copy()
             l_num = ind[-1].item()
             leaf_lengths[x] = l_num + 1
-            leaf_mask[x, :l_num + 1] = True
+            leaf_mask[x, :l_num + 1] = 1
             ind[1:] -= ind[:-1]
             words[x, :l_num] = trg_seqs[1][x][np.where(ind==1)[0].tolist()]
             words[x, l_num] = self.eou
             nts[x, :l_num] = trg_seqs[0][x][np.where(ind==1)[0].tolist()]
-        words_embed = self.lexicon(Variable(trg_seqs[1]).cuda())
+        words_embed = self.lexicon(trg_seqs[1].cuda())
         #nts = self.nt_dist(self.nt_out(F.tanh(self.nt_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size * 4], words_embed), dim=2)))))
         #rules = self.rule_dist(self.rule_out(F.tanh(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size*4], words_embed), dim=2)))))
         #rules = self.rule_dist(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size*4], words_embed), dim=2)))
@@ -3899,21 +3899,21 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 rules = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_outputs[:, :, :self.hidden_size*2])))
             else:
                 #rules = self.rule_dist(F.tanh(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size*1], F.tanh(self.merge_out(decoder_outputs[:, :, self.hidden_size:self.hidden_size*3]))), dim=2))))
-                rules = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_outputs[:, :, :self.hidden_size*2])))
+                rules = self.rule_dist(F.tanh(self.rule_hidden_out(decoder_outputs[:, :, :self.hidden_size*1])))
         else:
             #rules = self.rule_dist(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, self.hidden_size*3:self.hidden_size*4], decoder_outputs[:, :, :self.hidden_size*2], decoder_outputs[:, :, -self.context_size:]), dim=2)))
             rules = self.rule_dist(F.tanh(self.rule_hidden_out(torch.cat((decoder_outputs[:, :, :self.hidden_size*2], decoder_outputs[:, :, -self.context_size:]), dim=2))))
 
         if self.lex_level == 0:
-            word_loss = self.masked_loss(word_logits, Variable(trg_seqs[1]).cuda(), Variable(torch.LongTensor(trg_lengths)).cuda(), word_mask.cuda().byte())
+            word_loss = self.masked_loss(word_logits, trg_seqs[1].cuda(), torch.LongTensor(trg_lengths).cuda(), word_mask.cuda().byte())
             lm_loss = torch.zeros_like(word_loss)
         else:
-            word_loss = self.masked_loss(word_logits, Variable(trg_seqs[1]).cuda(), Variable(torch.LongTensor(trg_lengths)).cuda(), word_mask.cuda().byte())
-            lm_loss = compute_perplexity(self.lex_dist(F.tanh(self.lex_hidden_out_2(lm_decoder_hidden))), Variable(psn_seqs.cuda()), Variable(torch.cuda.LongTensor(psn_lengths)))
-        noun_loss = self.masked_loss(word_logits, Variable(trg_seqs[1]).cuda(), Variable(torch.LongTensor(trg_lengths)).cuda(), noun_mask.cuda().byte())
+            word_loss = self.masked_loss(word_logits, trg_seqs[1].cuda(), torch.LongTensor(trg_lengths).cuda(), word_mask.cuda().byte())
+            lm_loss = compute_perplexity(self.lex_dist(F.tanh(self.lex_hidden_out_2(lm_decoder_hidden))), psn_seqs.cuda(), torch.cuda.LongTensor(psn_lengths))
+        noun_loss = self.masked_loss(word_logits, trg_seqs[1].cuda(), torch.LongTensor(trg_lengths).cuda(), noun_mask.cuda().byte())
         #lm_loss = self.masked_loss(self.lm_lex_dist(F.tanh(self.lex_hidden_out_2(lm_decoder_hidden))), Variable(words), Variable(leaf_lengths), leaf_mask)
 
-        rule_loss = self.masked_loss(rules, Variable(trg_seqs[3]).cuda(), Variable(torch.LongTensor(trg_lengths)).cuda(), rule_mask.cuda().byte())
+        rule_loss = self.masked_loss(rules, trg_seqs[3].cuda(), torch.LongTensor(trg_lengths).cuda(), rule_mask.cuda().byte())
         #nt_logits = self.nt_dist(F.tanh(self.nt_hidden_out(lm_decoder_hidden)))
         #nt_loss = self.masked_loss(nt_logits, Variable(nts), Variable(leaf_lengths), leaf_mask)
         #nt_loss = self.masked_loss(nts, Variable(trg_seqs[2]).cuda(), Variable(torch.LongTensor(trg_lengths)).cuda(), torch.ones_like(rule_mask).cuda().byte())
@@ -3926,16 +3926,16 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         self.lm_weight = .0
         self.rerank = False
 
-        src_embed = self.lexicon(Variable(src_seqs).cuda())
+        src_embed = self.lexicon(src_seqs.cuda())
         packed_input = pack_padded_sequence(src_embed, np.asarray(src_lengths), batch_first=True)
         src_output, src_last_hidden = self.encoder(packed_input)
         src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
 
         psn_lengths, perm_idx = torch.LongTensor(psn_lengths).sort(0, descending=True)
         if self.data in ['persona', 'movie']:
-            psn_embed = self.lexicon(Variable(psn_seqs).cuda())
+            psn_embed = self.lexicon(psn_seqs.cuda())
         else:
-            psn_embed = torch.cat((self.constituent(Variable(psn_seqs[0]).cuda()), self.rule(Variable(psn_seqs[1]).cuda())), dim=2)
+            psn_embed = torch.cat((self.constituent(psn_seqs[0].cuda()), self.rule(psn_seqs[1].cuda())), dim=2)
         psn_embed = psn_embed[perm_idx.cuda()]
         packed_input = pack_padded_sequence(psn_embed, psn_lengths.numpy(), batch_first=True)
         if self.data in ['persona', 'movie']:
@@ -3970,13 +3970,13 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
 
         batch_size = src_embed.size(0)
         assert batch_size == 1
-        eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.eou))
+        eos_filler = torch.zeros(beam_size).long().cuda().fill_(self.eou)
         #context = self.attention(decoder_hidden, src_hidden, src_hidden.size(1), src_lengths) 
-        decoder_input = Variable(torch.zeros(batch_size, 1, self.decoder_input_size)).cuda()
-        decoder_input[:, :, :self.nt_input_size] = self.constituent(Variable(torch.cuda.LongTensor([self.ROOT]))).unsqueeze(1)
-        decoder_input[:, :, -300:] = self.depth(Variable(torch.cuda.LongTensor([1]))).unsqueeze(1)
+        decoder_input = torch.zeros(batch_size, 1, self.decoder_input_size).cuda()
+        decoder_input[:, :, :self.nt_input_size] = self.constituent(torch.cuda.LongTensor([self.ROOT])).unsqueeze(1)
+        decoder_input[:, :, -300:] = self.depth(torch.cuda.LongTensor([1])).unsqueeze(1)
         decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
-        anc_decoder_input = self.lexicon(Variable(torch.cuda.LongTensor([self.start]))).unsqueeze(1)
+        anc_decoder_input = self.lexicon(torch.cuda.LongTensor([self.start])).unsqueeze(1)
         anc_decoder_output, anc_decoder_hidden = self.anc_decoder(anc_decoder_input, anc_decoder_hidden)
         #rule_decoder_output, rule_decoder_hidden = self.rule_decoder(rule_decoder_input, rule_decoder_hidden)
 
@@ -4096,7 +4096,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
         finished = 0
         current = np.array([None for x in range(beam_size)])
         for y in range(beam_size):
-            rule = self.rules_by_id[rule_beam[y, 0]]
+            rule = self.rules_by_id[rule_beam[y, 0].item()]
             if self.lex_level == 0:
                 current[y] = Node('{}__{}__{}'.format('ROOT', word_beam[y, 0], rule))
                 current[y].id = node_ind
@@ -4128,16 +4128,16 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
             else:
                 raise NotImplementedError
             '''
-            return rule_beam[x, t] in self.ending_rules
+            return rule_beam[x, t].item() in self.ending_rules
 
         def rindex(lst, item):
             return len(lst) - lst[::-1].index(item) - 1
 
         for t in range(max_len-1):
-            ans_nt = Variable(torch.cuda.LongTensor(beam_size)).fill_(0)
-            ans_par_rule = Variable(torch.cuda.LongTensor(beam_size)).fill_(0)
-            anc_lex = Variable(torch.cuda.LongTensor(beam_size)).fill_(0)
-            depth = Variable(torch.cuda.LongTensor(beam_size)).fill_(0)
+            ans_nt = torch.cuda.LongTensor(beam_size).fill_(0)
+            ans_par_rule = torch.cuda.LongTensor(beam_size).fill_(0)
+            anc_lex = torch.cuda.LongTensor(beam_size).fill_(0)
+            depth = torch.cuda.LongTensor(beam_size).fill_(0)
             word_mask = torch.cuda.ByteTensor(beam_size, top_k)
             word_mask.fill_(True)
             rule_mask = torch.cuda.ByteTensor(beam_size, self.rule_cand_num)
@@ -4148,8 +4148,8 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
 
             for x in range(beam_size):
                 if current[x] is None:
-                    rule_mask[x] = False
-                    word_mask[x] = False
+                    rule_mask[x] = 0
+                    word_mask[x] = 0
                 else:
                     par_nt, par_lex, rule = current[x].name.split('__')
                     curr_nt[x] = rule.split()[len(current[x].children)]
@@ -4171,18 +4171,18 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                                 rule_count[x] += 1
                             else:
                                 #rule_count[x] += 1
-                                rule_mask[x] = False
+                                rule_mask[x] = 0
                                 num_leaves[x] += 1
-                                leaf_mask[x] = True
+                                leaf_mask[x] = 1
                         elif self.lex_level > 0:
                             rule_count[x] += 1
                             if is_preterminal(x, t):
                                 num_leaves[x] += 1
-                                leaf_mask[x] = True
+                                leaf_mask[x] = 1
                         if len(current[x].children) not in inheritance(rule):
                             word_count[x] += 1
                         else:
-                            word_mask[x] = False
+                            word_mask[x] = 0
                     ans_nt[x] = self.nt_dictionary[curr_nt[x]]
                     anc_lex[x] = int(par_lex)
                     if '[' in rule:
@@ -4321,17 +4321,17 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 for x in range(beam_size):
                     if rule_mask[x, 0, 0] == 0:
                         if word_mask[x, 0, 0] == 0:
-                            dup_mask[x, :, :] = True
-                            dup_mask[x, 0, 0] = False
+                            dup_mask[x, :, :] = 1
+                            dup_mask[x, 0, 0] = 0
                             if current[x] is not None:
                                 inherit = current[x].name.split('__')[1]
                                 word_argtop[x] = int(inherit)
                         else:
-                            dup_mask[x, :, :] = True
-                            dup_mask[x, :,  0] = False
+                            dup_mask[x, :, :] = 1
+                            dup_mask[x, :,  0] = 0
                     elif word_mask[x, 0, 0] == 0:
-                        dup_mask[x, :, :] = True
-                        dup_mask[x, 0, :] = False
+                        dup_mask[x, :, :] = 1
+                        dup_mask[x, 0, :] = 0
                         inherit = current[x].name.split('__')[1]
                         word_argtop[x] = int(inherit)
                 dup_mask = dup_mask.cuda()
@@ -4383,7 +4383,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                         rule_logits[x].data = rule_logits_x
                         if self.lex_level > 0:
                             #assert (rule_logits[x].data != -np.inf).long().sum() == self.lex_cand_num
-                            dup_mask[x, :, 1:self.rule_cand_num] = True
+                            dup_mask[x, :, 1:self.rule_cand_num] = 1
                     '''
                     if self.preterminal[curr_nt[x]]:
                         rule_argtop[x] = 2
@@ -4499,7 +4499,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                         word = word_beam[x, t+1]
                         ch = Node('{}__{}__ '.format(curr_nt[x], word), parent=current[x])
 
-                        lex_decoder_input = self.lexicon(Variable(torch.cuda.LongTensor([int(word)]))).unsqueeze(1)
+                        lex_decoder_input = self.lexicon(torch.cuda.LongTensor([int(word)])).unsqueeze(1)
                         _, _leaf_decoder_hidden = self.leaf_decoder(lex_decoder_input, (leaf_decoder_hidden[0][:, x, :].unsqueeze(1), leaf_decoder_hidden[1][:, x, :].unsqueeze(1)))
                         leaf_decoder_hidden[0][:, x, :] = _leaf_decoder_hidden[0][0]
                         leaf_decoder_hidden[1][:, x, :] = _leaf_decoder_hidden[1][0]
@@ -4524,7 +4524,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                             else:
                                 current[x] = current[x].parent
                     else:
-                        rule = self.rules_by_id[rule_beam[x, t+1]]
+                        rule = self.rules_by_id[rule_beam[x, t+1].item()]
                         word = 0
                         current[x] = Node('{}__{}__{}'.format(curr_nt[x], word, rule), parent=current[x])
             else:
@@ -4614,7 +4614,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                             syn_decoder_hidden[1][:, x, :].data = new_hidden[1][1].data.clone()
                     else:
                         nt, word, par_rule = current[x].name.split('__')
-                        rule = self.rules_by_id[rule_beam[x, t+1]]
+                        rule = self.rules_by_id[rule_beam[x, t+1].item()]
                         if len(current[x].children) not in inheritance(par_rule):
                             word = word_beam[x, t+1]
 
@@ -4640,7 +4640,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                         node_ind += 1
                         next_nt.append(self.nt_dictionary[rule.split()[len(current[x].children)]])
                 if anc_lex_select:
-                    anc_decoder_input = self.lexicon(Variable(torch.cuda.LongTensor(anc_word))).unsqueeze(1)
+                    anc_decoder_input = self.lexicon(torch.cuda.LongTensor(anc_word)).unsqueeze(1)
                     _, _anc_decoder_hidden = self.anc_decoder(anc_decoder_input, (anc_decoder_hidden[0][:, anc_lex_select, :], anc_decoder_hidden[1][:, anc_lex_select, :]))
                     anc_decoder_hidden[0][:, anc_lex_select, :] = _anc_decoder_hidden[0][0].clone()
                     anc_decoder_hidden[1][:, anc_lex_select, :] = _anc_decoder_hidden[1][0].clone()
@@ -4659,7 +4659,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                     lex_decoder_hidden[1][:, lex_select, :] = _lex_decoder_hidden[1][0]
                 '''
                 if leaf_select:
-                    leaf_decoder_input = self.lexicon(Variable(torch.cuda.LongTensor(leaf_word))).unsqueeze(1)
+                    leaf_decoder_input = self.lexicon(torch.cuda.LongTensor(leaf_word)).unsqueeze(1)
                     _, _leaf_decoder_hidden = self.leaf_decoder(leaf_decoder_input, (leaf_decoder_hidden[0][:, leaf_select, :], leaf_decoder_hidden[1][:, leaf_select, :]))
                     leaf_decoder_hidden[0][:, leaf_select, :] = _leaf_decoder_hidden[0][0]
                     leaf_decoder_hidden[1][:, leaf_select, :] = _leaf_decoder_hidden[1][0]

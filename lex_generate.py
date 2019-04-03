@@ -115,7 +115,8 @@ def main(config):
         src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, rule_seqs, lex_seqs, leaf_indices, lex_indices, word_mask, rule_mask, noun_mask, positions, ancestors, anc_lengths = batch
         #if align[_][0] == -1: 
         if True:
-            responses = hred.generate(src_seqs, src_lengths, psn_seqs, psn_lengths, indices, max_len, 20, 20, _)
+            with torch.no_grad():
+                responses = hred.generate(src_seqs, src_lengths, psn_seqs, psn_lengths, indices, max_len, 20, 20, _)
         else:
             slots = [dictionary['word'][w] for w in align[_][1]]
             print([w for w in align[_][1]])

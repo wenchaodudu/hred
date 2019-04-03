@@ -108,7 +108,7 @@ def main(config):
                                                   data=config.data
                                                  ).cuda()
             for p in hred.parameters():
-                torch.nn.init.uniform(p.data, a=-0.1, b=0.1)
+                torch.nn.init.xavier_uniform_(p.data)
             if config.glove:
                 print("Loading word vecotrs.")
                 word2vec_file = open('./glove.42B.300d.txt')
@@ -148,10 +148,13 @@ def main(config):
                                                  vocab_size, nt_vocab_size, rule_vocab_size,
                                                  word_vectors, nt_vectors, rule_vectors,
                                                  dictionary['word'], dictionary['const'], dictionary['rule'],
-                                                 dropout=0.0,
+                                                 dropout=0.25,
                                                  lex_level=lex_level,
                                                  data=config.data
                                                 ).cuda()
+            for p in hred.parameters():
+                if len(p.size()) > 1:
+                    torch.nn.init.xavier_uniform_(p.data)
             hred.init_rules(None)
         else:
             hred = torch.load('lex{}.{}.pt'.format(config.type, config.data))
@@ -174,6 +177,7 @@ def main(config):
         hred.train()
         params = filter(lambda x: x.requires_grad, hred.parameters())
         optimizer = torch.optim.SGD(params, lr=0.1 * 0.9 ** it, momentum=0.9)
+        #optimizer = torch.optim.Adam(params, lr=0.001)
         for _, batch in enumerate(train_loader):
             src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, rule_seqs, lex_seqs, leaf_indices, lex_indices, word_mask, rule_mask, noun_maks, positions, ancestors, anc_lengths = batch
             if _ % config.print_every_n_batches == 1:
@@ -185,11 +189,11 @@ def main(config):
                 loss = w_loss + r_loss
             else:
                 loss = w_loss + r_loss
-            ave_loss += loss.data[0]
-            ave_w_loss += w_loss.data[0]
-            ave_r_loss += r_loss.data[0]
+            ave_loss += loss.item()
+            ave_w_loss += w_loss.item()
+            ave_r_loss += r_loss.item()
             if lex_level > 0:
-                ave_nt_loss += nt_loss.data[0]
+                ave_nt_loss += nt_loss.item()
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm(params, .1)
@@ -208,20 +212,20 @@ def main(config):
                 loss = w_loss + r_loss
             else:
                 loss = w_loss + r_loss
-            dev_loss += loss.data[0]
-            dev_r_loss += r_loss.data[0]
-            dev_w_loss += w_loss.data[0]
-            dev_nn_loss += noun_loss.data[0] * nn_count
+            dev_loss += loss.item()
+            dev_r_loss += r_loss.item()
+            dev_w_loss += w_loss.item()
+            dev_nn_loss += noun_loss.item() * nn_count
             nn_total_count += nn_count
             if lex_level > 0:
-                dev_nt_loss += nt_loss.data[0]
+                dev_nt_loss += nt_loss.item()
             count += 1
-        print('dev loss:', np.array([dev_loss, dev_w_loss, dev_r_loss, dev_nt_loss, dev_nn_loss]) / count, dev_nn_loss / nn_total_count)
+        print('dev loss:', np.array([dev_loss, dev_w_loss, dev_r_loss, dev_nt_loss, dev_nn_loss]) / count)
         if dev_loss < best_loss:
             if config.glove:
                 torch.save(hred, 'lex{}.{}.glove.pt'.format(config.type, config.data))
             else:
-                torch.save(hred, 'lex{}.{}.pt'.format(config.type, config.data))
+                torch.save(hred, 'lex{}.{}.abla.pt'.format(config.type, config.data))
             best_loss = dev_loss
         if dev_loss > last_dev_loss:
             power += 1

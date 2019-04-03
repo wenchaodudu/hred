@@ -5,7 +5,7 @@ from collections import Counter
 import os
 from glob import glob
 import pdb
-import numpy as np
+#import numpy as np
 #from stanfordcorenlp import StanfordCoreNLP
 
 
@@ -105,20 +105,17 @@ def build_lex_word2id(seq_paths, min_word_count, config):
         nt, word, tag, rule = tree.name.split('__')
         word = word.lower()
         rule = rule[:rule.find('[')-1]
-        '''
+        pdb.set_trace()
         if rule not in rule_dict:
             rule_dict[rule] = len(rule_dict) + 1
-        '''
         if seq.find('test') > -1:
             test_rule_count[rule] += 1
         else:
             rule_count[rule] += 1
         if nt not in nt_dict:
             nt_dict[nt] = len(nt_dict) + 1
-        '''
         if word not in word_dict:
             word_dict[word] = len(word_dict) + 1
-        '''
         word_count[word] += 1
         for ch in tree.children:
             load(ch, rule_dict, word_dict, nt_dict, seq)
@@ -129,7 +126,7 @@ def build_lex_word2id(seq_paths, min_word_count, config):
         if seq.split('/')[-1].find('lex') > -1:
             if seq.find('lex{}'.format(config.type)) > -1:
                 print(seq)
-                trees = np.load(seq)
+                trees = pickle.load(open(seq, 'rb'))
                 for tr in trees:
                     load(tr, rule_dict, word_dict, nt_dict, seq)
         else:
@@ -181,7 +178,7 @@ def main(config):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--src_dir', type=str, default='./persona/Rules')
+    parser.add_argument('--src_dir', type=str, default='./persona/')
     parser.add_argument('--dict_path', type=str, default='./persona.rules.dictionary.json')
     parser.add_argument('--data', type=str, default='persona')
     parser.add_argument('--min_count', type=int, default=0)
