@@ -10,23 +10,28 @@ import numpy as np
 import argparse
 from hred_data_loader import get_hr_loader
 from data_loader import get_loader
-from context_data_loader import get_ctc_loader
+from dual_data_loader import get_dl_loader
 from masked_cel import compute_loss
 from gensim.models import Word2Vec
 
-from model import HRED, VHRED, AttnDecoder, PersonaAttnDecoder
+from model import DualDecoder
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 def main(config):
     print(config)
 
-    dictionary = json.load(open('./{}.parse.dictionary.json'.format(config.data)))
+    dictionary = json.load(open('./{}.dictionary.json'.format(config.data)))
+    parse_dict = json.load(open('./{}.parse.dictionary.json'.format(config.data)))
     vocab_size = len(dictionary) + 1
+    parse_vocab_size = len(dictionary) + 1
     word_embedding_dim = 300
+    parse_embedding_dim = 300
     print("Vocabulary size:", len(dictionary))
+    print("Parse vocabulary size:", len(parse_dict))
 
     word_vectors = np.random.uniform(low=-0.5, high=0.5, size=(vocab_size, word_embedding_dim))
+    parse_vectors = np.random.uniform(low=-0.5, high=0.5, size=(parse_vocab_size, parse_embedding_dim))
     found = 0
     print("Loading word vecotrs.")
     if config.glove:
@@ -69,28 +74,13 @@ def main(config):
             hred = torch.load('vhred.pt')
             hred.flatten_parameters()
     elif config.attn:
-        if config.data == 'persona':
-            train_loader = get_ctc_loader('./data/{}.train.src'.format(config.data),
-                                          './data/{}.train.trg'.format(config.data),
-                                          './data/{}.train.psn'.format(config.data),
-                                          dictionary, 40)
-            dev_loader = get_ctc_loader('./data/{}.valid.src'.format(config.data),
-                                        './data/{}.valid.trg'.format(config.data),
-                                        './data/{}.valid.psn'.format(config.data),
-                                        dictionary, 200)
-            if not config.use_saved:
-                hred = PersonaAttnDecoder(word_embedding_dim, hidden_size, vocab_size, word_vectors, dictionary).cuda()
-            else:
-                hred = torch.load('attn.pt')
-                hred.flatten_parameters()
+        train_loader = get_dl_loader('./data/{}.train.src'.format(config.data), './data/{}.train.parse.trg'.format(config.data), dictionary, parse_dict, 40)
+        dev_loader = get_dl_loader('./data/{}.valid.src'.format(config.data), './data/{}.valid.parse.trg'.format(config.data), dictionary, parse_dict, 200)
+        if not config.use_saved:
+            hred = DualDecoder(word_embedding_dim, parse_embedding_dim, hidden_size, vocab_size, parse_vocab_size, word_vectors, parse_vectors, dictionary, parse_dict).cuda()
         else:
-            train_loader = get_loader('./data/{}.train.src'.format(config.data), './data/{}.train.trg'.format(config.data), dictionary, 40)
-            dev_loader = get_loader('./data/{}.valid.src'.format(config.data), './data/{}.valid.trg'.format(config.data), dictionary, 200)
-            if not config.use_saved:
-                hred = AttnDecoder(word_embedding_dim, hidden_size, vocab_size, word_vectors, dictionary).cuda()
-            else:
-                hred = torch.load('attn.pt')
-                hred.flatten_parameters()
+            hred = torch.load('attn.pt')
+            hred.flatten_parameters()
     else:
         train_loader = get_hr_loader('./data/{}.train.src'.format(config.data), './data/{}.train.trg'.format(config.data), dictionary, 40)
         dev_loader = get_hr_loader('./data/{}.valid.src'.format(config.data), './data/{}.valid.trg'.format(config.data), dictionary, 200)
@@ -108,29 +98,30 @@ def main(config):
     optimizer = torch.optim.Adam(params, lr=0.001)
 
     best_loss = np.inf
-    for it in range(0, 20):
+    for it in range(0, 10):
         ave_loss = 0
         last_time = time.time()
         for _, batch in enumerate(train_loader):
             if config.attn:
-                if config.data == 'persona':
-                    src_seqs, src_lengths, trg_seqs, trg_lengths, ctc_seqs, ctc_lengths, indices = batch
-                else:
-                    src_seqs, src_lengths, trg_seqs, trg_lengths, indices = batch
+                src_seqs, src_lengths, trg_seqs, trg_lengths, parse_seqs, parse_lengths, indices = batch
             else:
                 src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len = batch
             if _ % config.print_every_n_batches == 1:
                 print(ave_loss / min(_, config.print_every_n_batches), time.time() - last_time)
+                if config.vhred:
+                    torch.save(hred, 'vhred.pt')
+                elif config.attn:
+                    torch.save(hred, 'dual.{}.pt'.format(config.data))
+                else:
+                    torch.save(hred, 'hred.pt')
                 ave_loss = 0
             if config.vhred and config.kl_weight and it * len(train_loader) + _ <= start_batch:
                 kl_weight = start_kl_weight + (1 - start_kl_weight) * float(it * len(train_loader) + _) / start_batch
                 # kl_weight = 0.5
                 loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_lengths, kl_weight)
             elif config.attn:
-                if config.data == 'persona':
-                    loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_seqs, ctc_lengths, 1.0)
-                else:
-                    loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, 1.0)
+                l_loss, p_loss = hred.loss(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, parse_seqs, parse_lengths, 1.0)
+                loss = l_loss + p_loss
             else:
                 loss = hred.loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.2)
                 #loss = hred.augmented_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len, 0.1)
@@ -145,17 +136,12 @@ def main(config):
         count = 0
         for _, batch in enumerate(dev_loader):
             if config.attn:
-                if config.data == 'persona':
-                    src_seqs, src_lengths, trg_seqs, trg_lengths, ctc_seqs, ctc_lengths, indices = batch
-                else:
-                    src_seqs, src_lengths, trg_seqs, trg_lengths, indices = batch
+                src_seqs, src_lengths, trg_seqs, trg_lengths, parse_seqs, parse_lengths, indices = batch
             else:
                 src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len = batch
             if config.attn:
-                if config.data == 'persona':
-                    dev_loss += hred.evaluate(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, ctc_seqs, ctc_lengths).data[0]
-                else:
-                    dev_loss += hred.evaluate(src_seqs, src_lengths, indices, trg_seqs, trg_lengths).data[0]
+                l_loss, p_loss = hred.evaluate(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, parse_seqs, parse_lengths)
+                dev_loss += (l_loss + p_loss).data[0]
             else:
                 dev_loss += hred.semantic_loss(src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len).data[0]
             count += 1
@@ -164,7 +150,7 @@ def main(config):
             if config.vhred:
                 torch.save(hred, 'vhred.pt')
             elif config.attn:
-                torch.save(hred, 'attn.{}.pt'.format(config.data))
+                torch.save(hred, 'dual.{}.pt'.format(config.data))
             else:
                 torch.save(hred, 'hred.pt')
             best_loss = dev_loss
@@ -191,7 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_path', type=str, default='')
     parser.add_argument('--data', type=str, default='persona')
     parser.add_argument('--start_kl_weight', type=float, default=0)
-    parser.add_argument('--attn', default=False, action='store_true')
+    parser.add_argument('--attn', default=True, action='store_true')
     parser.add_argument('--glove', default=False, action='store_true')
     config = parser.parse_args()
     main(config)

@@ -4310,7 +4310,7 @@ class DummyLexicalizedGrammarDecoder(nn.Module):
                 word_logits = F.log_softmax(word_logits, dim=1)
                 curr_nt_ind = [self.nt_dictionary[x] for x in curr_nt]
                 word_logits[~self.nt_word[curr_nt_ind]] = -10e8
-                word_logits[~self.word_word[anc_lex.data]] = -10e8
+                #word_logits[~self.word_word[anc_lex.data]] = -10e8
                 word_logits[:, 0] = -np.inf
                 word_logits[:, 1] = -np.inf
                 word_logits[:, 2] = -np.inf

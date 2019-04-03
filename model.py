@@ -687,23 +687,26 @@ class VHRED(nn.Module):
         
 
 class AttnDecoder(nn.Module):
-    def __init__(self, input_size, hidden_size, vocab_size, word_vectors, dictionary):
+    def __init__(self, input_size, context_size, hidden_size, vocab_size, word_vectors, dictionary, data, dropout):
         super(AttnDecoder, self).__init__()
         self.hidden_size = hidden_size
         self.input_size = input_size
         self.vocab_size = vocab_size
-        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
+        self.context_size = context_size
+        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=True)
         self.encoder = nn.LSTM(input_size, hidden_size)
-        self.decoder = nn.LSTM(input_size * 3, hidden_size, batch_first=True)
+        self.decoder = nn.LSTM(input_size, hidden_size, batch_first=True)
+        self.out = nn.Linear(hidden_size + context_size * 1, input_size)
         self.key_size = 200
         self.q_key = nn.Linear(hidden_size, self.key_size)
-        self.q_value = nn.Linear(hidden_size, input_size)
+        self.q_value = nn.Linear(hidden_size, context_size)
         self.a_key = nn.Linear(hidden_size, self.key_size)
-        self.p_key = nn.Linear(hidden_size * 2, self.key_size)
-        self.psn_key = nn.Linear(hidden_size, self.key_size)
-        self.psn_value = nn.Linear(hidden_size, input_size)
+        self.p_key = nn.Linear(hidden_size, self.key_size)
+        self.psn_key = nn.Linear(input_size, self.key_size)
+        self.psn_value = nn.Linear(input_size, input_size)
+        self.key_out = nn.Linear(self.key_size, 1)
+        self.merge_hidden = nn.Linear(hidden_size * 2, hidden_size)
         self.max_len = 21
-        self.out = nn.Linear(hidden_size, input_size)
         self.word_dist = nn.Linear(input_size, vocab_size)
         self.context_fc1 = nn.Linear(hidden_size * 2, hidden_size // 2 * 3)
         self.context_fc2 = nn.Linear(hidden_size // 2 * 3, hidden_size)
@@ -715,6 +718,8 @@ class AttnDecoder(nn.Module):
         self.dictionary = dictionary
         self.eou = dictionary['__eou__']
         self.word_dist.weight = self.embed.weight
+        self.data = data
+        self.drop = nn.Dropout(dropout)
 
         for names in self.encoder._all_weights:
             for name in filter(lambda n: "bias" in n,  names):
@@ -734,14 +739,11 @@ class AttnDecoder(nn.Module):
         self.encoder.flatten_parameters()
         self.decoder.flatten_parameters()
 
-    def context_transform(self, context):
-        return self.context_fc2(F.relu(self.context_fc1(context)))
-
     def hidden_transform(self, hidden):
-        return F.tanh(self.hidden_fc2(F.relu(self.hidden_fc1(hidden))))
+        return self.hidden_fc2(F.relu(self.hidden_fc1(hidden)))
 
     def cell_transform(self, cell):
-        return F.tanh(self.cell_fc2(F.relu(self.cell_fc1(cell))))
+        return self.cell_fc2(F.relu(self.cell_fc1(cell)))
 
     def init_hidden(self, src_hidden):
         hidden = src_hidden[0]
@@ -753,30 +755,46 @@ class AttnDecoder(nn.Module):
         return src_hidden
         '''
 
-    def attention(self, decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length):
+    def attention2(self, decoder_hidden, src_last_hidden, src_hidden, src_lengths, length):
         a_key = F.tanh(self.a_key(decoder_hidden[0].squeeze(0)))
-        p_key = F.tanh(self.p_key(torch.cat((decoder_hidden[0].squeeze(0), src_last_hidden[0].squeeze(0)), dim=1)))
 
         q_key = F.tanh(self.q_key(src_hidden))
-        psn_key = F.tanh(self.psn_key(psn_hidden))
         q_value = F.tanh(self.q_value(src_hidden))
-        psn_value = F.tanh(self.psn_value(psn_hidden))
         q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-        psn_energy = torch.bmm(psn_key, p_key.unsqueeze(2)).squeeze(2)
         q_mask  = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
-        psn_mask  = torch.arange(p_length).long().cuda().repeat(psn_hidden.size(0), 1) < psn_lengths.cuda().repeat(p_length, 1).transpose(0, 1)
         q_energy[~q_mask] = -np.inf
-        psn_energy[~psn_mask] = -np.inf
-        '''
         q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
-        psn_weights = F.softmax(psn_energy, dim=1).unsqueeze(1)
+        q_context = torch.bmm(q_weights, q_value)
+
+        return q_context
+
+    #def attention(self, decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length):
+    def attention(self, decoder_hidden, src_last_hidden, src_hidden, src_lengths, length):
+        a_key = self.a_key(decoder_hidden[0].squeeze(0))
+        #p_key = self.p_key(F.tanh(self.merge_hidden(torch.cat((decoder_hidden[0].squeeze(0), src_last_hidden[0].squeeze(0)), dim=1))))
+
+        q_key = self.q_key(src_hidden)
+        #psn_key = self.psn_key(psn_hidden)
+        #q_value = self.q_value(src_hidden)
+        q_value = src_hidden
+        #psn_value = self.psn_value(psn_hidden)
+        q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
+        #q_energy = self.key_out(F.tanh(q_key + a_key.unsqueeze(1).expand_as(q_key))).squeeze(2)
+        #psn_energy = torch.bmm(psn_key, p_key.unsqueeze(2)).squeeze(2)
+        q_mask = torch.arange(length).long().cuda().repeat(src_hidden.size(0), 1) < torch.cuda.LongTensor(src_lengths).repeat(length, 1).transpose(0, 1)
+        #psn_mask  = torch.arange(p_length).long().cuda().repeat(psn_hidden.size(0), 1) < psn_lengths.cuda().repeat(p_length, 1).transpose(0, 1)
+        q_energy[~q_mask] = -np.inf
+        #psn_energy[~psn_mask] = -np.inf
+        q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
         '''
+        psn_weights = F.softmax(psn_energy, dim=1).unsqueeze(1)
         q_weights = F.sigmoid(q_energy).unsqueeze(1)
         psn_weights = F.sigmoid(psn_energy).unsqueeze(1)
+        '''
         q_context = torch.bmm(q_weights, q_value)
-        psn_context = torch.bmm(psn_weights, psn_value)
+        #psn_context = torch.bmm(psn_weights, psn_value)
 
-        return q_context, psn_context
+        return q_context
 
     def forward(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, sampling_rate):
         batch_size = src_seqs.size(0)
@@ -787,27 +805,39 @@ class AttnDecoder(nn.Module):
         src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
         decoder_hidden = self.init_hidden(src_last_hidden) 
 
-        psn_lengths, perm_idx = torch.LongTensor(psn_lengths).sort(0, descending=True)
-        psn_embed = self.embed(Variable(psn_seqs).cuda())
-        psn_embed = psn_embed[perm_idx.cuda()]
-        packed_input = pack_padded_sequence(psn_embed, psn_lengths.numpy(), batch_first=True)
-        psn_output, psn_last_hidden = self.encoder(packed_input)
-        psn_hidden, _ = pad_packed_sequence(psn_output, batch_first=True)
-        psn_hidden = psn_hidden[perm_idx.sort()[1].cuda()]
-        psn_lengths = psn_lengths[perm_idx.sort()[1]]
+        '''
+        if self.data == 'persona':
+            psn_embed = self.embed(Variable(psn_seqs).cuda())
+            psn_lengths, perm_idx = torch.LongTensor(psn_lengths).sort(0, descending=True)
+            psn_embed = psn_embed[perm_idx.cuda()]
+            packed_input = pack_padded_sequence(psn_embed, psn_lengths.numpy(), batch_first=True)
+            psn_output, psn_last_hidden = self.encoder(packed_input)
+            psn_hidden, _ = pad_packed_sequence(psn_output, batch_first=True)
+            psn_hidden = psn_hidden[perm_idx.sort()[1].cuda()]
+            psn_lengths = psn_lengths[perm_idx.sort()[1]]
+
+            p_length = psn_hidden.size(1)
+        '''
 
         length = src_hidden.size(1)
-        p_length = psn_hidden.size(1)
         ans_embed = self.embed(Variable(trg_seqs).cuda())
         trg_l = ans_embed.size(1)
 
         decoder_input = ans_embed[:, 0, :].unsqueeze(1)
         decoder_outputs = Variable(torch.FloatTensor(batch_size, trg_l - 1, self.vocab_size).cuda())
+        '''
+        context = self.embed(Variable(psn_seqs).cuda()).sum(1) / Variable(torch.cuda.FloatTensor(psn_lengths).unsqueeze(1))
+        context = context.unsqueeze(1)
+        '''
         for step in range(trg_l - 1):
             #context = torch.cat((q_context, i_context), dim=1)
-            context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
-            decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, context, psn_context), dim=2), decoder_hidden)
-            decoder_outputs[:, step, :] = self.word_dist(self.out(decoder_output.squeeze(1)))
+            #context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
+            #context = self.attention(decoder_hidden, src_last_hidden, src_hidden, src_lengths, length)
+            context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_lengths, length)
+            #decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, context), dim=2), decoder_hidden)
+            decoder_output, decoder_hidden = self.decoder(self.drop(decoder_input), decoder_hidden)
+            decoder_output = torch.cat((self.drop(decoder_output), self.drop(context)), dim=2)
+            decoder_outputs[:, step, :] = self.word_dist(F.tanh(self.out(decoder_output.squeeze(1))))
             #decoder_outputs[:, step, :] = decoder_output.squeeze(1)
             if np.random.uniform() < sampling_rate and step < self.max_len - 2:
                 decoder_input = ans_embed[:, step+1, :].unsqueeze(1)
@@ -824,14 +854,18 @@ class AttnDecoder(nn.Module):
         src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
         decoder_hidden = self.init_hidden(src_last_hidden) 
 
-        psn_lengths, perm_idx = torch.LongTensor(psn_lengths).sort(0, descending=True)
-        psn_embed = self.embed(Variable(psn_seqs).cuda())
-        psn_embed = psn_embed[perm_idx.cuda()]
-        packed_input = pack_padded_sequence(psn_embed, psn_lengths.numpy(), batch_first=True)
-        psn_output, psn_last_hidden = self.encoder(packed_input)
-        psn_hidden, _ = pad_packed_sequence(psn_output, batch_first=True)
-        psn_hidden = psn_hidden[perm_idx.sort()[1].cuda()]
-        psn_lengths = psn_lengths[perm_idx.sort()[1]]
+        '''
+        if self.data == 'persona':
+            psn_lengths, perm_idx = torch.LongTensor(psn_lengths).sort(0, descending=True)
+            psn_embed = self.embed(Variable(psn_seqs).cuda())
+            psn_embed = psn_embed[perm_idx.cuda()]
+            packed_input = pack_padded_sequence(psn_embed, psn_lengths.numpy(), batch_first=True)
+            psn_output, psn_last_hidden = self.encoder(packed_input)
+            psn_hidden, _ = pad_packed_sequence(psn_output, batch_first=True)
+            psn_hidden = psn_hidden[perm_idx.sort()[1].cuda()]
+            psn_lengths = psn_lengths[perm_idx.sort()[1]]
+            p_length = psn_hidden.size(1)
+        '''
 
         cenc_out = src_last_hidden
         _batch_size = src_embed.size(0)
@@ -840,11 +874,23 @@ class AttnDecoder(nn.Module):
         eos_filler = Variable(torch.zeros(beam_size).long().cuda().fill_(self.eou))
         decoder_input = self.embed(Variable(torch.zeros(_batch_size).long().cuda().fill_(self.dictionary['<start>']))).unsqueeze(1)
         length = src_hidden.size(1)
-        p_length = psn_hidden.size(1)
 
-        q_context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
-        decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context, psn_context), dim=2), decoder_hidden)
-        decoder_output = self.word_dist(self.out(decoder_output.squeeze(1)))
+        '''
+        context = self.embed(Variable(psn_seqs).cuda()).sum(1) / Variable(torch.cuda.FloatTensor(psn_lengths).unsqueeze(1))
+        context = context.unsqueeze(1)
+        '''
+        if self.data in ['persona', 'movie']:
+            #q_context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
+            #context = self.attention(decoder_hidden, src_last_hidden, src_hidden, src_lengths, length)
+            context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_lengths, length)
+            #decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context), dim=2), decoder_hidden)
+            decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
+            decoder_output = torch.cat((decoder_output, context), dim=2)
+        else:
+            q_context = self.attention2(decoder_hidden, src_last_hidden, src_hidden, src_lengths, length)
+            decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context), dim=2), decoder_hidden)
+            decoder_output = torch.cat((decoder_output, q_context), dim=2)
+        decoder_output = self.word_dist(F.tanh(self.out(decoder_output.squeeze(1))))
         decoder_output[:, 0] = -np.inf
 
         if slots:
@@ -903,16 +949,29 @@ class AttnDecoder(nn.Module):
                                src_last_hidden[1].unsqueeze(2).expand(1, _batch_size, beam_size, self.hidden_size).contiguous().view(1, _batch_size * beam_size, -1))
             decoder_input = self.embed(argtop.view(-1)).unsqueeze(1)
             src_hidden = src_hidden.expand(beam_size, length, self.hidden_size)
-            psn_hidden = psn_hidden.expand(beam_size, p_length, self.hidden_size)
+            '''
+            if self.data == 'persona':
+                psn_hidden = psn_hidden.expand(beam_size, p_length, self.hidden_size)
+            '''
 
+        #context = context.expand(beam_size, 1, self.context_size)
         for t in range(max_len-1):
             if slots is not None:
                 new_beam = beam.clone()
                 new_beam_probs = beam_probs.clone()
                 new_beam_eos = beam_eos.clone()
-            q_context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
-            decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context, psn_context), dim=2), decoder_hidden)
-            decoder_output = self.word_dist(self.out(decoder_output.squeeze(1)))
+            if self.data in ['persona', 'movie']:
+                #q_context, psn_context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_hidden, src_lengths, psn_lengths, length, p_length)
+                #context = self.attention(decoder_hidden, src_last_hidden, src_hidden, src_lengths, length)
+                context = self.attention(decoder_hidden, src_last_hidden, src_hidden, psn_lengths, length)
+                #decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context), dim=2), decoder_hidden)
+                decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
+                decoder_output = torch.cat((decoder_output, context), dim=2)
+            else:
+                q_context = self.attention2(decoder_hidden, src_last_hidden, src_hidden, src_lengths, length)
+                decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, q_context), dim=2), decoder_hidden)
+                decoder_output = torch.cat((decoder_output, q_context), dim=2)
+            decoder_output = self.word_dist(F.tanh(self.out(decoder_output.squeeze(1))))
 
             if slots is not None:
                 logits = F.log_softmax(decoder_output, dim=1)
@@ -982,15 +1041,36 @@ class AttnDecoder(nn.Module):
             generations = beam[torch.arange(_batch_size).long().cuda(), best_arg.data].data.cpu()
         return generations, best
 
-    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, sampling_rate):
+    def masked_loss(self, logits, target, lengths, mask):
+        batch_size = logits.size(0)
+        max_len = lengths.data.max()
+        #max_len = logits.size(1)
+        l_mask  = torch.arange(max_len).long().cuda().expand(batch_size, max_len) < lengths.data.expand(max_len, batch_size).transpose(0, 1)
+        log_probs_flat = F.log_softmax(logits, dim=2).view(-1, logits.size(-1))
+        target_flat = target.contiguous().view(-1, 1)
+        losses_flat = -torch.gather(log_probs_flat, dim=1, index=target_flat)
+        losses = losses_flat.view(*target.size())
+        _mask = Variable(l_mask * mask)
+        losses = losses * _mask.float()
+        loss = losses.sum() / _mask.float().sum()
+        return loss, _mask.float().sum()
+
+    def loss(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, pos_seqs, nt_inds, sampling_rate):
         decoder_outputs = self.forward(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths, sampling_rate)
         loss = compute_perplexity(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
+        nn_mask = torch.zeros_like(pos_seqs).byte() 
+        for nt in nt_inds:
+            nn_mask |= pos_seqs == nt
+        noun_loss, count = self.masked_loss(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), Variable(torch.cuda.LongTensor(trg_lengths)) - 1, nn_mask.cuda())
+        loss = compute_perplexity(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
+        #loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
-        return loss
+        return loss, noun_loss, count
 
     def evaluate(self, src_seqs, src_lengths, indices, trg_seqs, trg_lengths, psn_seqs, psn_lengths):
         decoder_outputs = self.forward(src_seqs, src_lengths, indices, trg_seqs, trg_lengths, 1)
         loss = compute_perplexity(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
+        #loss = compute_loss(decoder_outputs, Variable(trg_seqs[:, 1:].cuda()), Variable(torch.cuda.LongTensor(trg_lengths)) - 1)
 
         return loss
 
@@ -1045,10 +1125,10 @@ class PersonaAttnDecoder(nn.Module):
         return self.context_fc2(F.relu(self.context_fc1(context)))
 
     def hidden_transform(self, hidden):
-        return self.hidden_fc2(F.relu(self.hidden_fc1(hidden)))
+        return F.tanh(self.hidden_fc2(F.relu(self.hidden_fc1(hidden))))
 
     def cell_transform(self, cell):
-        return self.cell_fc2(F.relu(self.cell_fc1(cell)))
+        return F.tanh(self.cell_fc2(F.relu(self.cell_fc1(cell))))
 
     def init_hidden(self, src_hidden):
         hidden = src_hidden[0]

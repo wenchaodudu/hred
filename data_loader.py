@@ -1,47 +1,100 @@
 import nltk
 import json
 import torch
+import pickle
 import torch.utils.data as data
 import pdb
+from string import punctuation
+from anytree import Node, PreOrderIter
+from nltk.corpus import stopwords
 
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
-    def __init__(self, src_path, trg_path, psn_path, word2id):
+    def __init__(self, src_path, trg_path, psn_path, dictionary):
         """Reads source and target sequences from txt files."""
         self.src_seqs = open(src_path).readlines()
-        self.trg_seqs = open(trg_path).readlines()
-        self.psn_seqs = open(psn_path).readlines()
         self.num_total_seqs = len(self.src_seqs)
-        self.max_len = 100
-        self.word2id = word2id
+        parse_file = pickle.load(open(trg_path, 'rb'))
+        #self.trg_seqs = open(trg_path).readlines()
+        self.trg_seqs = [None for x in range(self.num_total_seqs)]
+        self.pos_seqs = [None for x in range(self.num_total_seqs)]
+        self.stopword = set(stopwords.words('english')) & set(['.'])
+        if psn_path:
+            self.psn_seqs = open(psn_path).readlines()
+        else:
+            self.psn_seqs = ['' for x in range(self.num_total_seqs)]
+        self.max_len = 50
+        self.word2id = dictionary['word']
+        self.nt2id = dictionary['const']
         for x in range(self.num_total_seqs):
-            if x % 100000 == 0:
+            if x % 10000 == 0:
                 print(x)
-            self.src_seqs[x] = self.preprocess(self.src_seqs[x], self.word2id)
-            self.trg_seqs[x] = self.preprocess(self.trg_seqs[x], self.word2id)
-            self.psn_seqs[x] = self.preprocess(self.psn_seqs[x], self.word2id)
+            self.src_seqs[x] = self.preprocess(self.src_seqs[x], self.word2id, 'src')
+            #self.trg_seqs[x] = self.preprocess(self.trg_seqs[x], self.word2id, 'trg')
+            self.psn_seqs[x] = self.preprocess(self.psn_seqs[x], self.word2id, 'psn')
+            self.src_seqs[x] = self.psn_seqs[x] + self.src_seqs[x]
+            words, tags = self.preprocess_tree(parse_file[x])
+            self.trg_seqs[x] = words
+            self.pos_seqs[x] = tags
 
     def __getitem__(self, index):
         """Returns one data pair (source and target)."""
         src_seq = self.src_seqs[index]
         trg_seq = self.trg_seqs[index]
         psn_seq = self.psn_seqs[index]
-        return src_seq, trg_seq, psn_seq
+        pos_seq = self.pos_seqs[index]
+        return src_seq, trg_seq, psn_seq, pos_seq
 
     def __len__(self):
         return self.num_total_seqs
 
-    def preprocess(self, sequence, word2id):
+    def preprocess(self, sequence, word2id, name):
         """Converts words to ids."""
-        tokens = sequence.strip().lower().replace('|', ' ').replace('__eou__', ' ').replace('.', ' .')
-        tokens = tokens.split()[-self.max_len:]
+        tokens = sequence.strip().lower()
+        if name == 'src':
+            if '__eou__' in tokens:
+                tokens = ' '.join(tokens.split('__eou__')[-2:-1]).split()
+            else:
+                tokens = tokens.split()
+        elif name == 'psn':
+            if '.|' in tokens:
+                tokens += '|'
+                tokens = tokens.replace('.|', ' . ').split()
+            else:
+                tokens = tokens.split()
+            #tokens = [w for w in tokens if w not in self.stopword]
+        else:
+            tokens = tokens.strip(punctuation).strip().split()
+            tokens.insert(0, '<start>')
+            tokens.append('__eou__')
         sequence = []
-        sequence.append(word2id['<start>'])
-        sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
-        sequence.append(word2id['__eou__'])
+        #sequence.extend([word2id[token] if token in word2id else word2id['<UNK>'] for token in tokens])
+        sequence.extend([word2id[token] for token in tokens])
         return sequence
 
+    def preprocess_tree(self, tree):
+        words = ['<start>']
+        tags = []
+        for node in PreOrderIter(tree):
+            '''
+            if node.is_leaf:
+                tag, word, _, _ = node.name.split('__')
+                words.append(word)
+                tags.append(tag)
+            '''
+            nt, word, tag, rule = node.name.split('__')
+            ind = int(rule.split()[-1][1:-1])
+            node.ind = ind 
+            if node.parent is None:
+                words.append(word)
+                tags.append(tag)
+            elif node.parent.children.index(node) != node.parent.ind:
+                words.append(word)
+                tags.append(tag)
+        words.append('__eou__')
+        tags.append('.')
+        return [self.word2id[w] for w in words], [self.nt2id[nt] for nt in tags]
 
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (src_seq, trg_seq).
@@ -66,7 +119,8 @@ def collate_fn(data):
         padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
         for i, seq in enumerate(sequences):
             end = lengths[i]
-            padded_seqs[i, :end] = torch.LongTensor(seq[:end])
+            if end:
+                padded_seqs[i, :end] = torch.LongTensor(seq[:end])
         return padded_seqs, lengths
 
     '''
@@ -79,20 +133,21 @@ def collate_fn(data):
     trg_seqs, trg_indices = zip(*trg_data)
     '''
 
-    src_seqs, trg_seqs, psn_seqs = zip(*data)
-    data = list(zip(src_seqs, trg_seqs, psn_seqs, [*range(len(data))]))
+    src_seqs, trg_seqs, psn_seqs, pos_seqs = zip(*data)
+    data = list(zip(src_seqs, trg_seqs, psn_seqs, pos_seqs, [*range(len(data))]))
     # sort a list by sequence length (descending order) to use pack_padded_sequence
     data.sort(key=lambda x: len(x[0]), reverse=True)
 
     # seperate source and target sequences
-    src_seqs, trg_seqs, psn_seqs, indices = zip(*data)
+    src_seqs, trg_seqs, psn_seqs, pos_seqs, indices = zip(*data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
     trg_seqs, trg_lengths = merge(trg_seqs)
     psn_seqs, psn_lengths = merge(psn_seqs)
+    pos_seqs, pos_lengths = merge(pos_seqs)
 
-    return src_seqs, src_lengths, trg_seqs, trg_lengths, psn_seqs, psn_lengths, indices
+    return src_seqs, src_lengths, trg_seqs, trg_lengths, psn_seqs, psn_lengths, indices, pos_seqs
 
 
 def get_loader(src_path, trg_path, psn_path, word2id, batch_size=100, shuffle=True):

@@ -140,7 +140,7 @@ def collate_fn(data):
     return src_seqs, src_lengths, indices, ctc_seqs, ctc_lengths, ctc_indices, trg_seqs, trg_lengths, trg_indices, turn_len
 
 
-def get_loader(src_path, trg_path, word2id, batch_size=100, shuffle=False):
+def get_hr_loader(src_path, trg_path, word2id, batch_size=100, shuffle=False):
     """Returns data loader for custom dataset.
 
     Args:

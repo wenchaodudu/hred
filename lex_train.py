@@ -168,7 +168,7 @@ def main(config):
     best_loss = np.inf
     last_dev_loss = np.inf
     power = 0
-    for it in range(0, 30):
+    for it in range(0, 25):
         ave_loss, ave_w_loss, ave_r_loss, ave_nt_loss = 0, 0, 0, 0
         last_time = time.time()
         hred.train()
@@ -221,7 +221,7 @@ def main(config):
             if config.glove:
                 torch.save(hred, 'lex{}.{}.glove.pt'.format(config.type, config.data))
             else:
-                torch.save(hred, 'lex{}.{}.ab.pt'.format(config.type, config.data))
+                torch.save(hred, 'lex{}.{}.pt'.format(config.type, config.data))
             best_loss = dev_loss
         if dev_loss > last_dev_loss:
             power += 1
